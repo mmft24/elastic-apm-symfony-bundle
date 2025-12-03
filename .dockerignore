@@ -1,0 +1,10 @@
+.git
+.gitignore
+.idea
+.DS_Store
+vendor
+coverage-report
+.phpunit.cache
+.prettyci.composer.json
+Dockerfile
+.dockerignore

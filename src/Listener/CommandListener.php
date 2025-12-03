@@ -1,0 +1,84 @@
+<?php
+
+declare(strict_types=1);
+
+/*
+ * This file is part of Ekino New Relic bundle.
+ *
+ * (c) Ekino - Thomas Rabaix <thomas.rabaix@ekino.com>
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+namespace ElasticApmBundle\Listener;
+
+use ElasticApmBundle\Interactor\Config;
+use ElasticApmBundle\Interactor\ElasticApmInteractorInterface;
+use Symfony\Component\Console\ConsoleEvents;
+use Symfony\Component\Console\Event\ConsoleCommandEvent;
+use Symfony\Component\Console\Event\ConsoleErrorEvent;
+use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+
+final readonly class CommandListener implements EventSubscriberInterface
+{
+    public function __construct(
+        private ElasticApmInteractorInterface $interactor,
+        private Config $config,
+    ) {}
+
+    #[\Override]
+    public static function getSubscribedEvents(): array
+    {
+        return [
+            ConsoleEvents::COMMAND => ['onConsoleCommand', 0],
+            ConsoleEvents::ERROR => ['onConsoleError', 0],
+        ];
+    }
+
+    public function onConsoleCommand(ConsoleCommandEvent $event): void
+    {
+        $command = $event->getCommand();
+        $input = $event->getInput();
+
+        $this->interactor->setTransactionName($command->getName());
+
+        foreach ($input->getOptions() as $key => $value) {
+            $key = '--'.$key;
+            if (\is_array($value)) {
+                foreach ($value as $k => $v) {
+                    $this->interactor->addCustomContext($key.'['.$k.']', $v);
+                }
+            } else {
+                $this->interactor->addCustomContext($key, $value);
+            }
+        }
+
+        foreach ($input->getArguments() as $key => $value) {
+            if (\is_array($value)) {
+                foreach ($value as $k => $v) {
+                    $this->interactor->addCustomContext($key.'['.$k.']', $v);
+                }
+            } else {
+                $this->interactor->addCustomContext($key, $value);
+            }
+        }
+
+        $this->interactor->addContextFromConfig();
+    }
+
+    public function onConsoleError(ConsoleErrorEvent $event): void
+    {
+        if (!$this->config->shouldExplicitlyCollectCommandExceptions()) {
+            return;
+        }
+
+        $this->interactor->addContextFromConfig();
+        $this->interactor->noticeThrowable($event->getError());
+
+        if (null !== $event->getError()->getPrevious()) {
+            $this->interactor->addContextFromConfig();
+            $this->interactor->noticeThrowable($event->getError()->getPrevious());
+        }
+    }
+}

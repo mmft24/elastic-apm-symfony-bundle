@@ -1,0 +1,159 @@
+<?php
+
+declare(strict_types=1);
+
+/*
+ * This file is part of Ekino New Relic bundle.
+ *
+ * (c) Ekino - Thomas Rabaix <thomas.rabaix@ekino.com>
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+namespace ElasticApmBundle\Interactor;
+
+use Elastic\Apm\DistributedTracingData;
+use Elastic\Apm\SpanInterface;
+use Elastic\Apm\TransactionInterface;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
+
+final readonly class LoggingInteractorDecorator implements ElasticApmInteractorInterface
+{
+    public function __construct(
+        private ElasticApmInteractorInterface $interactor,
+        private ?LoggerInterface $logger = new NullLogger(),
+    ) {}
+
+    #[\Override]
+    public function setTransactionName(string $name): bool
+    {
+        $this->logger->debug('Setting Elastic APM transaction name to {name}', ['name' => $name]);
+
+        return $this->interactor->setTransactionName($name);
+    }
+
+    #[\Override]
+    public function addLabel(string $name, $value): bool
+    {
+        $this->logger->debug('Adding Elastic APM label {name}: {value}', ['name' => $name, 'value' => $value]);
+
+        return $this->interactor->addLabel($name, $value);
+    }
+
+    #[\Override]
+    public function addCustomContext(string $name, $value): bool
+    {
+        $this->logger->debug('Adding Elastic APM custom context {name}: {value}', ['name' => $name, 'value' => $value]);
+
+        return $this->interactor->addCustomContext($name, $value);
+    }
+
+    #[\Override]
+    public function noticeThrowable(\Throwable $e): void
+    {
+        $this->logger->debug(
+            'Sending exception to Elastic APM',
+            [
+                'message' => $e->getMessage(),
+                'exception' => $e,
+            ],
+        );
+        $this->interactor->noticeThrowable($e);
+    }
+
+    #[\Override]
+    public function endCurrentTransaction(?float $duration = null): bool
+    {
+        $this->logger->debug('Ending the current Elastic APM transaction');
+
+        return $this->interactor->endCurrentTransaction($duration);
+    }
+
+    #[\Override]
+    public function beginTransaction(
+        string $name,
+        string $type,
+        ?float $timestamp = null,
+        ?DistributedTracingData $distributedTracingData = null,
+    ): ?TransactionInterface {
+        $this->logger->debug('Starting a new Elastic APM transaction for app {name}', ['name' => $name]);
+
+        return $this->interactor->beginTransaction($name, $type, $timestamp, $distributedTracingData);
+    }
+
+    #[\Override]
+    public function beginCurrentTransaction(
+        string $name,
+        string $type,
+        ?float $timestamp = null,
+        ?DistributedTracingData $distributedTracingData = null,
+    ): ?TransactionInterface {
+        $this->logger->debug(
+            'Starting a new Elastic APM transaction and setting to current for app {name}',
+            ['name' => $name],
+        );
+
+        return $this->interactor->beginCurrentTransaction($name, $type, $timestamp, $distributedTracingData);
+    }
+
+    #[\Override]
+    public function getCurrentTransaction(): ?TransactionInterface
+    {
+        $this->logger->debug('Getting active transaction');
+
+        return $this->interactor->getCurrentTransaction();
+    }
+
+    #[\Override]
+    public function beginCurrentSpan(
+        string $name,
+        string $type,
+        ?string $subtype = null,
+        ?string $action = null,
+        ?float $timestamp = null,
+    ): ?SpanInterface {
+        $this->logger->debug('Starting new span on current transaction and making it current');
+
+        return $this->interactor->beginCurrentSpan($name, $type, $subtype, $action, $timestamp);
+    }
+
+    #[\Override]
+    public function endCurrentSpan(?float $duration = null): bool
+    {
+        $this->logger->debug('Ending current span on active transaction');
+
+        return $this->interactor->endCurrentSpan($duration);
+    }
+
+    #[\Override]
+    public function captureCurrentSpan(
+        string $name,
+        string $type,
+        \Closure $callback,
+        ?string $subtype = null,
+        ?string $action = null,
+        ?float $timestamp = null,
+    ): mixed {
+        $this->logger->debug('Starting new span capture');
+
+        return $this->interactor->captureCurrentSpan($name, $type, $callback, $subtype, $action, $timestamp);
+    }
+
+    #[\Override]
+    public function setUserAttributes(?string $id, ?string $email, ?string $username): bool
+    {
+        $this->logger->debug('Setting Elastic APM user attributes');
+
+        return $this->interactor->setUserAttributes($id, $email, $username);
+    }
+
+    #[\Override]
+    public function addContextFromConfig(): void
+    {
+        $this->logger->debug('Adding context from config');
+
+        $this->interactor->addContextFromConfig();
+    }
+}

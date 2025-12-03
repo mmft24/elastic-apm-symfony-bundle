@@ -2,7 +2,7 @@ Elastic APM Symfony Bundle
 =====================
 
 [![Latest Version](https://img.shields.io/github/release/mmft24/elastic-apm-symfony-bundle.svg?style=flat-square)](https://github.com/mmft24/elastic-apm-symfony-bundle/releases)
-[![Total Downloads](https://img.shields.io/packagist/dt/mmft24/elastic-apm-symfony-bundle.svg?style=flat-square)](https://packagist.org/packages/myschoolmanagement/elastic-apm-symfony-bundle)
+[![Total Downloads](https://img.shields.io/packagist/dt/mmft24/elastic-apm-symfony-bundle.svg?style=flat-square)](https://packagist.org/packages/mmft24/elastic-apm-symfony-bundle)
 [![Tests](https://github.com/mmft24/elastic-apm-symfony-bundle/workflows/Tests/badge.svg)](https://github.com/mmft24/elastic-apm-symfony-bundle/actions)
 
 This bundle integrates the Elastic APM PHP API into Symfony. For more information about Elastic APM, please visit https://www.elastic.co/apm. This bundle adds a lot more essentials. Here's a quick list:
@@ -33,7 +33,7 @@ Follow https://www.elastic.co/guide/en/apm/agent/php/current/intro.html.
 #### With Symfony Flex (Recommended)
 
 ```bash
-composer require myschoolmanagement/elastic-apm-symfony-bundle
+composer require mmft24/elastic-apm-symfony-bundle
 ```
 
 The bundle will be automatically registered in `config/bundles.php`.

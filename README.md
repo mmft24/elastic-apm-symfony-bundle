@@ -1,8 +1,9 @@
 Elastic APM Symfony Bundle
 =====================
 
-[![Latest Version](https://img.shields.io/github/release/MySchoolManagement/elastic-apm-symfony-bundle.svg?style=flat-square)](https://github.com/myschoolmanagement/elastic-apm-symfony-bundle/releases)
-[![Total Downloads](https://img.shields.io/packagist/dt/myschoolmanagement/elastic-apm-symfony-bundle.svg?style=flat-square)](https://packagist.org/packages/myschoolmanagement/elastic-apm-symfony-bundle)
+[![Latest Version](https://img.shields.io/github/release/mmft24/elastic-apm-symfony-bundle.svg?style=flat-square)](https://github.com/mmft24/elastic-apm-symfony-bundle/releases)
+[![Total Downloads](https://img.shields.io/packagist/dt/mmft24/elastic-apm-symfony-bundle.svg?style=flat-square)](https://packagist.org/packages/myschoolmanagement/elastic-apm-symfony-bundle)
+[![Tests](https://github.com/mmft24/elastic-apm-symfony-bundle/workflows/Tests/badge.svg)](https://github.com/mmft24/elastic-apm-symfony-bundle/actions)
 
 This bundle integrates the Elastic APM PHP API into Symfony. For more information about Elastic APM, please visit https://www.elastic.co/apm. This bundle adds a lot more essentials. Here's a quick list:
 
@@ -23,42 +24,46 @@ This bundle integrates the Elastic APM PHP API into Symfony. For more informatio
 
 ## Installation
 
-### Step 0 : Install Elastic APM
+### Step 0: Install Elastic APM
 
 Follow https://www.elastic.co/guide/en/apm/agent/php/current/intro.html.
 
 ### Step 1: Add dependency
 
+#### With Symfony Flex (Recommended)
+
 ```bash
-$ composer require myschoolmanagement/elastic-apm-symfony-bundle
+composer require myschoolmanagement/elastic-apm-symfony-bundle
 ```
 
-### Step 2: Register the bundle
+The bundle will be automatically registered in `config/bundles.php`.
 
-Then register the bundle with your kernel:
+#### Without Symfony Flex
+
+```bash
+composer require mmft24/elastic-apm-symfony-bundle
+```
+
+Then manually register the bundle in `config/bundles.php`:
 
 ```php
 <?php
 
-// in AppKernel::registerBundles()
-$bundles = array(
+return [
     // ...
-    new ElasticApmBundle\ElasticApmBundle(),
-    // ...
-);
+    ElasticApmBundle\ElasticApmBundle::class => ['all' => true],
+];
 ```
 
-### Step 3: Configuring Elastic APM
+### Step 2: Configuring Elastic APM
 
 You should review all the configuration items for the agent extension here, https://www.elastic.co/guide/en/apm/agent/php/current/configuration.html. These must be set either through environment variables or `php.ini`. These cannot be set during the request and so the bundle does not support setting them. 
 
-### Step 4: Configure the bundle
+### Step 3: Configure the bundle
 
-The following are all the options you can configure on the bundle.
+Create `config/packages/elastic_apm.yaml` with the following options:
 
 ```yaml
-# app/config/config.yml
-
 elastic_apm:
     enabled: true                         # Defaults to true
     logging: false                        # If true, logs all interactions to the Symfony log (default: false)
@@ -140,6 +145,111 @@ PHP APM will automatically collect unhandled exceptions. The bundle will also in
 To fix this you can turn off `explicitly_collect_exceptions` under the `command` configuration node.
 
 
+## Development
+
+### Running Unit Tests
+
+This bundle includes comprehensive unit tests. You can run them in several ways:
+
+#### Using Docker (Recommended)
+
+The easiest way to run tests is using Docker, which includes the required `elastic_apm` PHP extension:
+
+```bash
+# Build the Docker image
+docker build -t elastic-apm-symfony-bundle-test .
+
+# Run all tests
+docker run --rm --volume $(pwd):/app elastic-apm-symfony-bundle-test:latest
+
+# Run tests with coverage
+docker run --rm --volume $(pwd):/app elastic-apm-symfony-bundle-test:latest ELASTIC_APM_ENABLED=true XDEBUG_MODE=coverage ./vendor/bin/phpunit --coverage-html coverage-report
+
+# Run specific test file
+docker run --rm --volume $(pwd):/app elastic-apm-symfony-bundle-test:latest ./vendor/bin/phpunit tests/Interactor/ElasticApmInteractorTest.php
+
+# Interactive shell for debugging
+docker run -ti --rm --volume $(pwd):/app elastic-apm-symfony-bundle-test:latest /bin/bash
+```
+
+#### Running Tests Locally
+
+If you have PHP 8.2+ and the Elastic APM extension installed locally:
+
+```bash
+# Install dependencies
+composer install
+
+# Run all tests
+./vendor/bin/phpunit
+
+# Run tests with coverage
+./vendor/bin/phpunit --coverage-html coverage-report
+
+# Run specific test file
+./vendor/bin/phpunit tests/Interactor/ElasticApmInteractorTest.php
+```
+
+**Note:** Some tests require the `elastic_apm` PHP extension. Tests that require this extension will be automatically skipped if the extension is not available. See the [official installation guide](https://www.elastic.co/guide/en/apm/agent/php/current/setup.html).
+
+### Continuous Integration
+
+This project uses GitHub Actions for continuous integration. The workflow automatically:
+
+- **Runs PHPUnit tests** on PHP 8.2 and 8.3
+- **Generates code coverage** reports (PHP 8.3 only)
+- **Checks code style** (if php-cs-fixer is configured)
+- **Executes on**:
+  - Every push to `master`/`main` branches
+  - Every pull request targeting `master`/`main`
+
+The workflow uses Docker to ensure the `elastic_apm` PHP extension is available during testing. You can view the workflow status and results in the [Actions tab](https://github.com/mmft24/elastic-apm-symfony-bundle/actions) of the repository.
+
+## Contributing
+
+We welcome contributions! Here's how you can help:
+
+### Getting Started
+
+1. Fork the repository
+2. Clone your fork: `git clone https://github.com/YOUR-USERNAME/elastic-apm-symfony-bundle.git`
+3. Create a feature branch: `git checkout -b feature/your-feature-name`
+4. Make your changes
+5. Run tests to ensure everything works: `docker build -t elastic-apm-test . && docker run --rm elastic-apm-test`
+6. Commit your changes with a clear message
+7. Push to your fork: `git push origin feature/your-feature-name`
+8. Open a Pull Request
+
+### Contribution Guidelines
+
+- **Code Style**: Follow PSR-12 coding standards
+- **Tests**: Add tests for new features or bug fixes
+- **Documentation**: Update documentation for any changed functionality
+- **Compatibility**: Ensure compatibility with Symfony 6.0+ and PHP 8.2+
+- **Commit Messages**: Write clear, descriptive commit messages
+
+### Pull Request Process
+
+1. Ensure all tests pass
+2. Update the README.md if needed
+3. Update the CHANGELOG.md with your changes
+4. The PR will be reviewed by maintainers
+5. Address any feedback or requested changes
+6. Once approved, your PR will be merged
+
+### Reporting Issues
+
+If you find a bug or have a feature request:
+
+1. Check if the issue already exists
+2. If not, create a new issue with a clear title and description
+3. Include steps to reproduce for bugs
+4. Include your environment details (PHP version, Symfony version, etc.)
+
 ## Credits
 
-This bundle is based largely on the work done by https://github.com/ekino/EkinoNewRelicBundle.
+This bundle is based largely on the work done by:
+- [mmft24/elastic-apm-symfony-bundle](https://github.com/mmft24/elastic-apm-symfony-bundle) - The original Elastic APM Symfony Bundle
+- [ekino/EkinoNewRelicBundle](https://github.com/ekino/EkinoNewRelicBundle) - The foundational work that inspired this bundle's architecture
+
+Special thanks to all contributors who have helped improve this bundle.

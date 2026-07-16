@@ -66,24 +66,33 @@ Create `config/packages/elastic_apm.yaml` with the following options:
 ```yaml
 elastic_apm:
     enabled: true                         # Defaults to true
-    logging: false                        # If true, logs all interactions to the Symfony log (default: false)
+    logging: false                        # If true, logs all interactions to a PSR-3 logger (default: false)
     interactor: ~                         # The interactor service that is used. Setting enabled=false will override this value 
-    deprecations: true                    # If true, reports deprecations to Elastic APM (default: true)
+    deprecations: true                    # If true, reports E_USER_DEPRECATED to Elastic APM (default: true)
+    warnings: true                        # If true, reports E_WARNING/E_USER_WARNING to Elastic APM (default: true)
     track_memory_usage: false             # If true, records peak memory usage
     memory_usage_label: memory_usage      # The name of the custom label to write memory usage to
+    custom_labels:                        # Labels added to every transaction
+        team: payments
+    custom_context:                       # Custom context added to every transaction
+        deployment: blue
     exceptions:
        enabled: true                      # If true, sends exceptions (default: true)
-       should_unwrap_exceptions: false    # If true, will also sends the previous/nested exception (default: false)
-       ignored_exceptions:                # List of exception classes to ignore
+       unwrap_exceptions: false           # If true, also sends the previous/nested exceptions (default: false)
+       capture_min_status_code: 500       # Min HTTP status an HttpException must carry to be reported; lower to 400 to capture 4xx signal (default: 500)
+       ignored_exceptions:                # List of exception classes to ignore (subclasses are ignored too)
           - An\Ignored\Exception
     http:
         enabled: true
-        transaction_naming: route         # route, controller or service (see below)
+        transaction_naming: route         # route, controller, uri or service (see below)
         transaction_naming_service: ~     # Transaction naming service (see below)
     commands: 
         enabled: true                     # If true, enhances CLI commands with options and arguments (default: true)
         explicitly_collect_exceptions: true # Turn this off if you are experiencing multiple reports of exceptions.
 ```
+
+> **Note:** sensitive command options/arguments (those whose name contains `password`, `token`, `secret`,
+> `api_key`, `dsn`, …) are automatically redacted before being sent to APM.
 
 ## Enhanced RUM instrumentation
 
@@ -92,11 +101,11 @@ This bundle does not integrate RUM (see https://www.elastic.co/guide/en/apm/serv
 ## Transaction naming strategies
 
 The bundle comes with three built-in transaction naming strategies:
-- `route`
-- `controller`
-- `uri`
-  
-Naming the transaction after the route, controller or request URI respectively. However, the bundle supports custom transaction naming strategies through the `service` configuration option. If you have selected the `service` configuration option, you must pass the name of your own transaction naming service as the `transaction_naming_service` configuration option.
+- `route` — names the transaction after the matched route (default, recommended).
+- `controller` — names the transaction after the resolved controller.
+- `uri` — names the transaction after the request method and path. The query string is **dropped** to avoid leaking sensitive data (tokens, e-mail addresses, session ids) into transaction names. Note that dynamic path segments (e.g. `/users/123`) still produce distinct names, which can increase APM cardinality; prefer `route` when that matters.
+
+However, the bundle also supports custom transaction naming strategies through the `service` configuration option. If you have selected the `service` configuration option, you must pass the name of your own transaction naming service as the `transaction_naming_service` configuration option.
 
 The transaction naming service class must implement the `ElasticApmBundle\TransactionNamingStrategy\TransactionNamingStrategyInterface` interface. For more information on creating your own services, see the Symfony documentation on [Creating/Configuring Services in the Container](http://symfony.com/doc/current/book/service_container.html#creating-configuring-services-in-the-container).
 
@@ -174,7 +183,7 @@ docker run -ti --rm --volume $(pwd):/app elastic-apm-symfony-bundle-test:latest 
 
 #### Running Tests Locally
 
-If you have PHP 8.2+ and the Elastic APM extension installed locally:
+If you have PHP 8.3+ and the Elastic APM extension installed locally:
 
 ```bash
 # Install dependencies
@@ -196,7 +205,7 @@ composer install
 
 This project uses GitHub Actions for continuous integration. The workflow automatically:
 
-- **Runs PHPUnit tests** on PHP 8.2 and 8.3
+- **Runs PHPUnit tests** on PHP 8.3 and 8.4
 - **Generates code coverage** reports (PHP 8.3 only)
 - **Checks code style** (if php-cs-fixer is configured)
 - **Executes on**:
@@ -225,7 +234,7 @@ We welcome contributions! Here's how you can help:
 - **Code Style**: Follow PSR-12 coding standards
 - **Tests**: Add tests for new features or bug fixes
 - **Documentation**: Update documentation for any changed functionality
-- **Compatibility**: Ensure compatibility with Symfony 6.0+ and PHP 8.2+
+- **Compatibility**: Ensure compatibility with Symfony 6.4, 7.0, and 8.0 (as declared in `composer.json`) and PHP 8.3+
 - **Commit Messages**: Write clear, descriptive commit messages
 
 ### Pull Request Process
@@ -246,10 +255,17 @@ If you find a bug or have a feature request:
 3. Include steps to reproduce for bugs
 4. Include your environment details (PHP version, Symfony version, etc.)
 
+## Sponsor
+
+If this bundle is useful to you, please consider sponsoring its development:
+
+<iframe src="https://github.com/sponsors/mmft24/button" title="Sponsor mmft24" height="32" width="114" style="border: 0; border-radius: 6px;"></iframe>
+
+[:heart: Sponsor mmft24 on GitHub](https://github.com/sponsors/mmft24)
+
 ## Credits
 
-This bundle is based largely on the work done by:
-- [mmft24/elastic-apm-symfony-bundle](https://github.com/mmft24/elastic-apm-symfony-bundle) - The original Elastic APM Symfony Bundle
-- [ekino/EkinoNewRelicBundle](https://github.com/ekino/EkinoNewRelicBundle) - The foundational work that inspired this bundle's architecture
+This bundle's design is based on the work done by:
+- [ekino/EkinoNewRelicBundle](https://github.com/ekino/EkinoNewRelicBundle) - The foundational New Relic bundle that inspired this bundle's architecture.
 
 Special thanks to all contributors who have helped improve this bundle.

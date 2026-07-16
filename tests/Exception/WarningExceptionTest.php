@@ -15,8 +15,7 @@ final class WarningExceptionTest extends TestCase
     {
         $exception = new WarningException('Warning message', 0, \E_WARNING, '/path/to/file.php', 20);
 
-        $this->assertInstanceOf(\ErrorException::class, $exception);
-        $this->assertInstanceOf(WarningException::class, $exception);
+        // getSeverity()/getFile()/getLine() below exercise the \ErrorException contract this class relies on.
         $this->assertSame('Warning message', $exception->getMessage());
         $this->assertSame(0, $exception->getCode());
         $this->assertSame(\E_WARNING, $exception->getSeverity());

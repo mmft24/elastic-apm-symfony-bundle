@@ -15,6 +15,9 @@ return static function (ContainerConfigurator $container): void {
     ;
 
     $services->set(DeprecationListener::class)
+        // Reset the dedup cache between requests and Messenger messages so errors are not silently dropped
+        // for the whole lifetime of a long-running worker process.
+        ->tag('kernel.reset', ['method' => 'reset'])
         ->alias('elastic_apm.listener.deprecation', DeprecationListener::class)
         ->public()
     ; // Needs to be public as it's accessed from bundle boot

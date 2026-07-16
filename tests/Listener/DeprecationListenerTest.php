@@ -13,7 +13,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(DeprecationListener::class)]
 final class DeprecationListenerTest extends TestCase
 {
-    private \PHPUnit\Framework\MockObject\MockObject $interactor;
+    private ElasticApmInteractorInterface&\PHPUnit\Framework\MockObject\MockObject $interactor;
     private DeprecationListener $listener;
 
     protected function setUp(): void
@@ -71,10 +71,12 @@ final class DeprecationListenerTest extends TestCase
 
     public function testUnregisterWithoutRegisterDoesNothing(): void
     {
-        // Should not throw any errors
-        $this->listener->unregister();
+        // Calling unregister() before register() must be a safe no-op that never
+        // touches the interactor (no handler was installed to forward to it).
+        $this->interactor->expects($this->never())
+            ->method('noticeThrowable');
 
-        $this->expectNotToPerformAssertions();
+        $this->listener->unregister();
     }
 
     public function testErrorHandlerOnlyHandlesDeprecations(): void

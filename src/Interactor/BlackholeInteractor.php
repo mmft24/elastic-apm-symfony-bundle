@@ -3,8 +3,9 @@
 declare(strict_types=1);
 
 /*
- * This file is part of Ekino New Relic bundle.
+ * This file is part of the Elastic APM Symfony Bundle.
  *
+ * (c) mmft24
  * (c) Ekino - Thomas Rabaix <thomas.rabaix@ekino.com>
  *
  * For the full copyright and license information, please view the LICENSE
@@ -94,6 +95,11 @@ final class BlackholeInteractor implements ElasticApmInteractorInterface
         return true;
     }
 
+    /**
+     * The callback is invoked with `null` instead of a {@see \Elastic\Apm\SpanInterface}: this interactor is used
+     * precisely when the `elastic_apm` extension is absent, so no span (and no `SpanInterface`) exists to hand over.
+     * Callbacks meant to run under both the real and the blackhole interactor must therefore accept a nullable span.
+     */
     #[\Override]
     public function captureCurrentSpan(
         string $name,

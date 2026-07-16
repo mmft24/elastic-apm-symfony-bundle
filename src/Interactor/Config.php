@@ -3,8 +3,9 @@
 declare(strict_types=1);
 
 /*
- * This file is part of Ekino New Relic bundle.
+ * This file is part of the Elastic APM Symfony Bundle.
  *
+ * (c) mmft24
  * (c) Ekino - Thomas Rabaix <thomas.rabaix@ekino.com>
  *
  * For the full copyright and license information, please view the LICENSE
@@ -23,8 +24,8 @@ class Config
     private readonly string $memoryUsageLabelName;
 
     /**
-     * @param array<string, string|int|float> $customLabels
-     * @param array<string, string|int|float> $customContext
+     * @param array<string, string|int|float|bool> $customLabels
+     * @param array<string, string|int|float|bool> $customContext
      * @param bool $shouldCollectMemoryUsage
      * @param string $memoryUsageLabelName
      * @param bool $shouldExplicitlyCollectCommandExceptions
@@ -46,7 +47,7 @@ class Config
     }
 
     /**
-     * @param array<string, string|int|float> $customLabels
+     * @param array<string, string|int|float|bool> $customLabels
      */
     public function setCustomLabels(array $customLabels): void
     {
@@ -59,7 +60,7 @@ class Config
     }
 
     /**
-     * @return float[]|int[]|string[]
+     * @return array<string, string|int|float|bool>
      */
     public function getCustomLabels(): array
     {
@@ -67,7 +68,7 @@ class Config
     }
 
     /**
-     * @param array<string, string|int|float> $customContext
+     * @param array<string, string|int|float|bool> $customContext
      */
     public function setCustomContext(array $customContext): void
     {
@@ -80,7 +81,7 @@ class Config
     }
 
     /**
-     * @return float[]|int[]|string[]
+     * @return array<string, string|int|float|bool>
      */
     public function getCustomContext(): array
     {

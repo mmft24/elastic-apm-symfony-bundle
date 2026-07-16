@@ -13,23 +13,17 @@ use Psr\Log\LoggerInterface;
 #[CoversClass(LoggingInteractorDecorator::class)]
 final class LoggingInteractorDecoratorTest extends TestCase
 {
-    private \PHPUnit\Framework\MockObject\MockObject|ElasticApmInteractorInterface $interactor;
-    private \PHPUnit\Framework\MockObject\MockObject|LoggerInterface $logger;
+    private ElasticApmInteractorInterface&\PHPUnit\Framework\MockObject\MockObject $interactor;
+    private LoggerInterface&\PHPUnit\Framework\MockObject\MockObject $logger;
     private LoggingInteractorDecorator $decorator;
-
-    protected function setUp(): void
-    {
-        $this->interactor = $this->createMock(ElasticApmInteractorInterface::class);
-        $this->logger = $this->createMock(LoggerInterface::class);
-        $this->decorator = new LoggingInteractorDecorator($this->interactor, $this->logger);
-    }
 
     public function testConstructorWithoutLoggerUsesNullLogger(): void
     {
-        $decorator = new LoggingInteractorDecorator($this->interactor);
+        $interactor = $this->createMock(ElasticApmInteractorInterface::class);
+        $decorator = new LoggingInteractorDecorator($interactor);
 
         // Should not throw any errors
-        $this->interactor->expects($this->once())
+        $interactor->expects($this->once())
             ->method('setTransactionName')
             ->with('test')
             ->willReturn(true);
@@ -40,6 +34,8 @@ final class LoggingInteractorDecoratorTest extends TestCase
 
     public function testSetTransactionNameLogsAndDelegates(): void
     {
+        $this->createDecorator();
+
         $this->logger->expects($this->once())
             ->method('debug')
             ->with(
@@ -59,11 +55,13 @@ final class LoggingInteractorDecoratorTest extends TestCase
 
     public function testAddLabelLogsAndDelegates(): void
     {
+        $this->createDecorator();
+
         $this->logger->expects($this->once())
             ->method('debug')
             ->with(
-                'Adding Elastic APM label {name}: {value}',
-                ['name' => 'key', 'value' => 'value'],
+                'Adding Elastic APM label {name}',
+                ['name' => 'key'],
             );
 
         $this->interactor->expects($this->once())
@@ -78,11 +76,13 @@ final class LoggingInteractorDecoratorTest extends TestCase
 
     public function testAddCustomContextLogsAndDelegates(): void
     {
+        $this->createDecorator();
+
         $this->logger->expects($this->once())
             ->method('debug')
             ->with(
-                'Adding Elastic APM custom context {name}: {value}',
-                ['name' => 'key', 'value' => 'value'],
+                'Adding Elastic APM custom context {name}',
+                ['name' => 'key'],
             );
 
         $this->interactor->expects($this->once())
@@ -97,6 +97,8 @@ final class LoggingInteractorDecoratorTest extends TestCase
 
     public function testNoticeThrowableLogsAndDelegates(): void
     {
+        $this->createDecorator();
+
         $exception = new \RuntimeException('Test exception');
 
         $this->logger->expects($this->once())
@@ -118,6 +120,8 @@ final class LoggingInteractorDecoratorTest extends TestCase
 
     public function testBeginTransactionLogsAndDelegates(): void
     {
+        $this->createDecorator();
+
         $this->logger->expects($this->once())
             ->method('debug')
             ->with(
@@ -137,6 +141,8 @@ final class LoggingInteractorDecoratorTest extends TestCase
 
     public function testBeginCurrentTransactionLogsAndDelegates(): void
     {
+        $this->createDecorator();
+
         $this->logger->expects($this->once())
             ->method('debug')
             ->with(
@@ -156,6 +162,8 @@ final class LoggingInteractorDecoratorTest extends TestCase
 
     public function testEndCurrentTransactionLogsAndDelegates(): void
     {
+        $this->createDecorator();
+
         $this->logger->expects($this->once())
             ->method('debug')
             ->with('Ending the current Elastic APM transaction');
@@ -172,6 +180,8 @@ final class LoggingInteractorDecoratorTest extends TestCase
 
     public function testGetCurrentTransactionLogsAndDelegates(): void
     {
+        $this->createDecorator();
+
         $this->logger->expects($this->once())
             ->method('debug')
             ->with('Getting active transaction');
@@ -187,6 +197,8 @@ final class LoggingInteractorDecoratorTest extends TestCase
 
     public function testBeginCurrentSpanLogsAndDelegates(): void
     {
+        $this->createDecorator();
+
         $this->logger->expects($this->once())
             ->method('debug')
             ->with('Starting new span on current transaction and making it current');
@@ -203,6 +215,8 @@ final class LoggingInteractorDecoratorTest extends TestCase
 
     public function testEndCurrentSpanLogsAndDelegates(): void
     {
+        $this->createDecorator();
+
         $this->logger->expects($this->once())
             ->method('debug')
             ->with('Ending current span on active transaction');
@@ -219,6 +233,8 @@ final class LoggingInteractorDecoratorTest extends TestCase
 
     public function testCaptureCurrentSpanLogsAndDelegates(): void
     {
+        $this->createDecorator();
+
         $callback = fn(): string => 'result';
 
         $this->logger->expects($this->once())
@@ -237,6 +253,8 @@ final class LoggingInteractorDecoratorTest extends TestCase
 
     public function testSetUserAttributesLogsAndDelegates(): void
     {
+        $this->createDecorator();
+
         $this->logger->expects($this->once())
             ->method('debug')
             ->with('Setting Elastic APM user attributes');
@@ -253,6 +271,8 @@ final class LoggingInteractorDecoratorTest extends TestCase
 
     public function testAddContextFromConfigLogsAndDelegates(): void
     {
+        $this->createDecorator();
+
         $this->logger->expects($this->once())
             ->method('debug')
             ->with('Adding context from config');
@@ -261,5 +281,12 @@ final class LoggingInteractorDecoratorTest extends TestCase
             ->method('addContextFromConfig');
 
         $this->decorator->addContextFromConfig();
+    }
+
+    private function createDecorator(): void
+    {
+        $this->interactor = $this->createMock(ElasticApmInteractorInterface::class);
+        $this->logger = $this->createMock(LoggerInterface::class);
+        $this->decorator = new LoggingInteractorDecorator($this->interactor, $this->logger);
     }
 }

@@ -3,8 +3,9 @@
 declare(strict_types=1);
 
 /*
- * This file is part of Ekino New Relic bundle.
+ * This file is part of the Elastic APM Symfony Bundle.
  *
+ * (c) mmft24
  * (c) Ekino - Thomas Rabaix <thomas.rabaix@ekino.com>
  *
  * For the full copyright and license information, please view the LICENSE
@@ -15,10 +16,10 @@ namespace ElasticApmBundle\DependencyInjection;
 
 use Symfony\Component\Config\Definition\Builder\TreeBuilder;
 use Symfony\Component\Config\Definition\ConfigurationInterface;
+use Symfony\Component\HttpFoundation\Response;
 
 final class Configuration implements ConfigurationInterface
 {
-    /** @phpstan-ignore missingType.generics */
     #[\Override]
     public function getConfigTreeBuilder(): TreeBuilder
     {
@@ -28,7 +29,15 @@ final class Configuration implements ConfigurationInterface
         $rootNode
             ->children()
                 ->booleanNode('enabled')->defaultTrue()->end()
-                ->scalarNode('interactor')->end()
+                ->scalarNode('interactor')
+                    ->info('Service id of the interactor to use, or "auto" to detect the elastic_apm extension.')
+                    ->validate()
+                        ->ifTrue(static fn($v): bool => !\is_string($v) || '' === $v)
+                        ->thenInvalid(
+                            'The "interactor" option must be a non-empty string (a service id or "auto"), got %s.',
+                        )
+                    ->end()
+                ->end()
                 ->booleanNode('logging')
                     ->info('Write logs to a PSR3 logger whenever we send data to Elastic APM.')
                     ->defaultFalse()
@@ -50,6 +59,14 @@ final class Configuration implements ConfigurationInterface
                         ->end()
                         ->booleanNode('unwrap_exceptions')
                             ->defaultFalse()
+                        ->end()
+                        ->integerNode('capture_min_status_code')
+                            ->info(
+                                'Minimum HTTP status code an HttpException must carry to be reported to APM. '
+                                .'Lower it (e.g. 400) to capture 4xx signal such as auth brute-force or rate-limit storms.',
+                            )
+                            ->defaultValue(Response::HTTP_INTERNAL_SERVER_ERROR)
+                            ->min(100)->max(599)
                         ->end()
                     ->end()
                 ->end()
@@ -88,6 +105,12 @@ final class Configuration implements ConfigurationInterface
                                 'Should exceptions be explicitly collected? This can conflict with the built-in collection in PHP APM',
                             )
                             ->defaultTrue()
+                        ->end()
+                        ->arrayNode('sensitive_parameter_names')
+                            ->info(
+                                'Additional command option/argument names (matched as whole words, case-insensitive) whose values must be redacted before being sent to APM.',
+                            )
+                            ->scalarPrototype()->end()
                         ->end()
                     ->end()
                 ->end()

@@ -3,8 +3,9 @@
 declare(strict_types=1);
 
 /*
- * This file is part of Ekino New Relic bundle.
+ * This file is part of the Elastic APM Symfony Bundle.
  *
+ * (c) mmft24
  * (c) Ekino - Thomas Rabaix <thomas.rabaix@ekino.com>
  *
  * For the full copyright and license information, please view the LICENSE
@@ -23,7 +24,7 @@ final readonly class LoggingInteractorDecorator implements ElasticApmInteractorI
 {
     public function __construct(
         private ElasticApmInteractorInterface $interactor,
-        private ?LoggerInterface $logger = new NullLogger(),
+        private LoggerInterface $logger = new NullLogger(),
     ) {}
 
     #[\Override]
@@ -37,7 +38,8 @@ final readonly class LoggingInteractorDecorator implements ElasticApmInteractorI
     #[\Override]
     public function addLabel(string $name, $value): bool
     {
-        $this->logger->debug('Adding Elastic APM label {name}: {value}', ['name' => $name, 'value' => $value]);
+        // Log the key only: label values can carry PII or secrets.
+        $this->logger->debug('Adding Elastic APM label {name}', ['name' => $name]);
 
         return $this->interactor->addLabel($name, $value);
     }
@@ -45,7 +47,8 @@ final readonly class LoggingInteractorDecorator implements ElasticApmInteractorI
     #[\Override]
     public function addCustomContext(string $name, $value): bool
     {
-        $this->logger->debug('Adding Elastic APM custom context {name}: {value}', ['name' => $name, 'value' => $value]);
+        // Log the key only: context values can carry PII or secrets.
+        $this->logger->debug('Adding Elastic APM custom context {name}', ['name' => $name]);
 
         return $this->interactor->addCustomContext($name, $value);
     }

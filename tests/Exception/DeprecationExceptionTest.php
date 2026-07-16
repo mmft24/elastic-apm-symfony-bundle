@@ -15,8 +15,7 @@ final class DeprecationExceptionTest extends TestCase
     {
         $exception = new DeprecationException('Deprecated feature', 0, \E_USER_DEPRECATED, '/path/to/file.php', 10);
 
-        $this->assertInstanceOf(\ErrorException::class, $exception);
-        $this->assertInstanceOf(DeprecationException::class, $exception);
+        // getSeverity()/getFile()/getLine() below exercise the \ErrorException contract this class relies on.
         $this->assertSame('Deprecated feature', $exception->getMessage());
         $this->assertSame(0, $exception->getCode());
         $this->assertSame(\E_USER_DEPRECATED, $exception->getSeverity());

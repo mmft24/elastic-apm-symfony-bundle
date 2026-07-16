@@ -3,8 +3,9 @@
 declare(strict_types=1);
 
 /*
- * This file is part of Ekino New Relic bundle.
+ * This file is part of the Elastic APM Symfony Bundle.
  *
+ * (c) mmft24
  * (c) Ekino - Thomas Rabaix <thomas.rabaix@ekino.com>
  *
  * For the full copyright and license information, please view the LICENSE
@@ -18,9 +19,10 @@ use Elastic\Apm\SpanInterface;
 use Elastic\Apm\TransactionInterface;
 
 /**
- * This interactor does never assume that the extension is installed. It will check for the existence of the extension
- * every time this is class is instantiated. This is a good interactor to use when you want to enable and disable the
- * extension without rebuilding your container.
+ * This interactor never assumes that the extension is installed. It checks for the existence of the extension once,
+ * when the container instantiates this class, and then delegates every call to either the real or the fake
+ * interactor. This is a good interactor to use when you want to enable and disable the extension without rebuilding
+ * your container.
  *
  * @author Tobias Nyholm <tobias.nyholm@gmail.com>
  */
@@ -99,13 +101,7 @@ final readonly class AdaptiveInteractor implements ElasticApmInteractorInterface
         ?string $action = null,
         ?float $timestamp = null,
     ): ?SpanInterface {
-        $current = $this->interactor->getCurrentTransaction();
-
-        if (null !== $current) {
-            return $current->beginCurrentSpan($name, $type, $subtype, $action, $timestamp);
-        }
-
-        return null;
+        return $this->interactor->beginCurrentSpan($name, $type, $subtype, $action, $timestamp);
     }
 
     #[\Override]

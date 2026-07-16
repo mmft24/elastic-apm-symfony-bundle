@@ -3,8 +3,9 @@
 declare(strict_types=1);
 
 /*
- * This file is part of Ekino New Relic bundle.
+ * This file is part of the Elastic APM Symfony Bundle.
  *
+ * (c) mmft24
  * (c) Ekino - Thomas Rabaix <thomas.rabaix@ekino.com>
  *
  * For the full copyright and license information, please view the LICENSE
@@ -19,8 +20,22 @@ use Elastic\Apm\SpanInterface;
 use Elastic\Apm\TransactionBuilderInterface;
 use Elastic\Apm\TransactionInterface;
 
+/**
+ * Interactor that talks directly to the Elastic APM agent.
+ *
+ * PRECONDITION: this interactor must only be used when the `elastic_apm` extension is loaded and the
+ * {@see \Elastic\Apm\ElasticApm} class exists. Every method dereferences the agent facade unguarded, so using
+ * it without the extension will fatal. Do not wire this class directly unless you can guarantee the extension is
+ * present; prefer {@see AdaptiveInteractor} (the default) or the `auto` interactor, both of which fall back to
+ * {@see BlackholeInteractor} when the extension is missing.
+ */
 final readonly class ElasticApmInteractor implements ElasticApmInteractorInterface
 {
+    /**
+     * Elastic APM limits label keys and string values to 1024 bytes.
+     */
+    private const int MAX_LABEL_LENGTH = 1024;
+
     public function __construct(
         private Config $config,
     ) {}
@@ -37,10 +52,9 @@ final readonly class ElasticApmInteractor implements ElasticApmInteractorInterfa
     #[\Override]
     public function addLabel(string $name, $value): bool
     {
-        // limited to 1024 bytes in label key/value
         ElasticApm::getCurrentTransaction()->context()->setLabel(
-            \mb_substr($name, 0, 1024),
-            \is_string($value) ? \mb_substr($value, 0, 1024) : $value,
+            \mb_strcut($name, 0, self::MAX_LABEL_LENGTH),
+            \is_string($value) ? \mb_strcut($value, 0, self::MAX_LABEL_LENGTH) : $value,
         );
 
         return true;
@@ -57,8 +71,13 @@ final readonly class ElasticApmInteractor implements ElasticApmInteractorInterfa
     {
         ElasticApm::createErrorFromThrowable($e);
 
-        if ($this->config->shouldUnwrapExceptions() && null !== $e->getPrevious()) {
-            ElasticApm::createErrorFromThrowable($e->getPrevious());
+        if (!$this->config->shouldUnwrapExceptions()) {
+            return;
+        }
+
+        // Unwrap the whole chain, not just a single level, so nested causes are reported too.
+        for ($previous = $e->getPrevious(); null !== $previous; $previous = $previous->getPrevious()) {
+            ElasticApm::createErrorFromThrowable($previous);
         }
     }
 

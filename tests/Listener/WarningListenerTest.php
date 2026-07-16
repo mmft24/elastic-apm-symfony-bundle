@@ -13,7 +13,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(WarningListener::class)]
 final class WarningListenerTest extends TestCase
 {
-    private \PHPUnit\Framework\MockObject\MockObject $interactor;
+    private ElasticApmInteractorInterface&\PHPUnit\Framework\MockObject\MockObject $interactor;
     private WarningListener $listener;
 
     protected function setUp(): void
@@ -79,8 +79,12 @@ final class WarningListenerTest extends TestCase
 
     public function testUnregisterWhenNotRegisteredDoesNothing(): void
     {
-        // Don't call unregister - just verify listener is constructed correctly
-        $this->assertInstanceOf(WarningListener::class, $this->listener);
+        // Calling unregister() before register() must be a safe no-op and not restore an unrelated handler.
+        // No handler is installed, so the interactor must never be touched.
+        $this->interactor->expects($this->never())
+            ->method('noticeThrowable');
+
+        $this->listener->unregister();
     }
 
     public function testHandlesEWarning(): void
@@ -163,6 +167,35 @@ final class WarningListenerTest extends TestCase
 
         @\trigger_error('First warning', \E_USER_WARNING);
         @\trigger_error('Second warning', \E_USER_WARNING);
+    }
+
+    public function testIdenticalWarningIsReportedOnlyOnce(): void
+    {
+        $this->listener->register();
+
+        // A hot code path emitting the same warning (same type/file/line/message) repeatedly must not flood APM:
+        // only the first is reported. The loop keeps the trigger site on a single line so the dedup key matches.
+        $this->interactor->expects($this->once())
+            ->method('noticeThrowable');
+
+        for ($i = 0; $i < 3; ++$i) {
+            @\trigger_error('Repeated warning', \E_USER_WARNING);
+        }
+    }
+
+    public function testResetReenablesReportingOfPreviouslySeenWarning(): void
+    {
+        $this->listener->register();
+
+        // The dedup cache is scoped to a transaction. After the services resetter clears it between requests or
+        // Messenger messages, the same warning must be reported again rather than silently dropped.
+        $this->interactor->expects($this->exactly(2))
+            ->method('noticeThrowable');
+
+        for ($i = 0; $i < 2; ++$i) {
+            @\trigger_error('Warning across transactions', \E_USER_WARNING);
+            $this->listener->reset();
+        }
     }
 
     public function testRegisterUnregisterCycle(): void

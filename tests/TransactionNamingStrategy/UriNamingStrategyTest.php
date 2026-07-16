@@ -37,13 +37,25 @@ final class UriNamingStrategyTest extends TestCase
         $this->assertSame('POST /api/users', $result);
     }
 
-    public function testGetTransactionNameWithQueryString(): void
+    public function testGetTransactionNameDropsQueryString(): void
     {
         $request = Request::create('/api/users?sort=name&limit=10', 'GET');
 
         $result = $this->strategy->getTransactionName($request);
 
-        $this->assertSame('GET /api/users?sort=name&limit=10', $result);
+        // The query string is dropped so it can never bloat cardinality or leak data.
+        $this->assertSame('GET /api/users', $result);
+    }
+
+    public function testGetTransactionNameDropsSensitiveQueryParameters(): void
+    {
+        $request = Request::create('/reset-password?token=super-secret&email=user@example.com', 'GET');
+
+        $result = $this->strategy->getTransactionName($request);
+
+        $this->assertSame('GET /reset-password', $result);
+        $this->assertStringNotContainsString('super-secret', $result);
+        $this->assertStringNotContainsString('user@example.com', $result);
     }
 
     public function testGetTransactionNameWithRootPath(): void

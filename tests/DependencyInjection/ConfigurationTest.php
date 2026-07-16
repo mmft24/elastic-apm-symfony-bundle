@@ -34,6 +34,7 @@ final class ConfigurationTest extends TestCase
         $this->assertTrue($config['exceptions']['enabled']);
         $this->assertSame([], $config['exceptions']['ignored_exceptions']);
         $this->assertFalse($config['exceptions']['unwrap_exceptions']);
+        $this->assertSame(500, $config['exceptions']['capture_min_status_code']);
         $this->assertTrue($config['deprecations']['enabled']);
         $this->assertTrue($config['warnings']['enabled']);
         $this->assertSame([], $config['custom_labels']);
@@ -133,6 +134,24 @@ final class ConfigurationTest extends TestCase
         ]);
 
         $this->assertTrue($config['exceptions']['unwrap_exceptions']);
+    }
+
+    public function testCaptureMinStatusCodeCanBeLowered(): void
+    {
+        $config = $this->processor->processConfiguration($this->configuration, [
+            ['exceptions' => ['capture_min_status_code' => 400]],
+        ]);
+
+        $this->assertSame(400, $config['exceptions']['capture_min_status_code']);
+    }
+
+    public function testCaptureMinStatusCodeRejectsOutOfRangeValues(): void
+    {
+        $this->expectException(InvalidConfigurationException::class);
+
+        $this->processor->processConfiguration($this->configuration, [
+            ['exceptions' => ['capture_min_status_code' => 42]],
+        ]);
     }
 
     public function testDeprecationsCanBeDisabled(): void

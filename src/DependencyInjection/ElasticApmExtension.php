@@ -3,8 +3,9 @@
 declare(strict_types=1);
 
 /*
- * This file is part of Ekino New Relic bundle.
+ * This file is part of the Elastic APM Symfony Bundle.
  *
+ * (c) mmft24
  * (c) Ekino - Thomas Rabaix <thomas.rabaix@ekino.com>
  *
  * For the full copyright and license information, please view the LICENSE
@@ -18,6 +19,8 @@ use ElasticApmBundle\Interactor\BlackholeInteractor;
 use ElasticApmBundle\Interactor\Config;
 use ElasticApmBundle\Interactor\ElasticApmInteractor;
 use ElasticApmBundle\Interactor\ElasticApmInteractorInterface;
+use ElasticApmBundle\Interactor\LoggingInteractorDecorator;
+use ElasticApmBundle\Listener\CommandListener;
 use ElasticApmBundle\Listener\ExceptionListener;
 use ElasticApmBundle\TransactionNamingStrategy\ControllerNamingStrategy;
 use ElasticApmBundle\TransactionNamingStrategy\RouteNamingStrategy;
@@ -27,6 +30,7 @@ use Symfony\Component\Config\FileLocator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Extension\Extension;
 use Symfony\Component\DependencyInjection\Loader;
+use Symfony\Component\DependencyInjection\Reference;
 
 /**
  * This is the class that loads and manages your bundle configuration.
@@ -44,7 +48,18 @@ final class ElasticApmExtension extends Extension
         $loader = new Loader\PhpFileLoader($container, new FileLocator(\dirname(__DIR__, 2).'/config'));
         $loader->load('services.php');
 
-        $container->setAlias(ElasticApmInteractorInterface::class, $this->getInteractorServiceId($config))->setPublic(
+        $interactorId = $this->getInteractorServiceId($config);
+
+        if ($config['logging']) {
+            // Wrap the chosen interactor in the logging decorator and expose the decorator as the interactor.
+            // Referencing the concrete service (not the interface alias) keeps this free of a circular reference.
+            $container->getDefinition(LoggingInteractorDecorator::class)
+                ->setArgument('$interactor', new Reference($interactorId));
+
+            $interactorId = LoggingInteractorDecorator::class;
+        }
+
+        $container->setAlias(ElasticApmInteractorInterface::class, $interactorId)->setPublic(
             false,
         );
         $container->setAlias(
@@ -72,6 +87,12 @@ final class ElasticApmExtension extends Extension
 
         if ($config['commands']['enabled']) {
             $loader->load('command_listener.php');
+
+            $container->getDefinition(CommandListener::class)
+                ->setArgument(
+                    '$additionalSensitiveParameterNames',
+                    $config['commands']['sensitive_parameter_names'],
+                );
         }
 
         if ($config['exceptions']['enabled']) {
@@ -81,6 +102,7 @@ final class ElasticApmExtension extends Extension
                 ->setArguments(
                     [
                         '$ignoredExceptions' => $config['exceptions']['ignored_exceptions'],
+                        '$captureMinStatusCode' => $config['exceptions']['capture_min_status_code'],
                     ],
                 );
         }
@@ -95,7 +117,7 @@ final class ElasticApmExtension extends Extension
     }
 
     /**
-     * @param array{enabled: bool, interactor?: string} $config
+     * @param array<string, mixed> $config
      */
     private function getInteractorServiceId(array $config): string
     {
@@ -108,39 +130,49 @@ final class ElasticApmExtension extends Extension
             return AdaptiveInteractor::class;
         }
 
-        if ('auto' === $config['interactor']) {
+        $interactor = (string) $config['interactor'];
+
+        if ('auto' === $interactor) {
             // Check if the extension is loaded or not
             return \extension_loaded('elastic_apm') ? ElasticApmInteractor::class : BlackholeInteractor::class;
         }
 
-        return $config['interactor'];
+        return $interactor;
     }
 
     /**
-     * @param array{http: array{transaction_naming: string, transaction_naming_service?: string}} $config
+     * @param array<string, mixed> $config
      */
     private function getTransactionNamingServiceId(array $config): string
     {
-        switch ($config['http']['transaction_naming']) {
-            case 'controller':
-                return ControllerNamingStrategy::class;
-            case 'route':
-                return RouteNamingStrategy::class;
-            case 'uri':
-                return UriNamingStrategy::class;
-            case 'service':
-                if (!isset($config['http']['transaction_naming_service'])) {
-                    throw new \LogicException(
-                        'When using the "service", transaction naming scheme, the "transaction_naming_service" config parameter must be set.',
-                    );
-                }
+        $http = (array) $config['http'];
+        $naming = (string) $http['transaction_naming'];
 
-                return $config['http']['transaction_naming_service'];
-            default:
-                throw new \InvalidArgumentException(\sprintf(
-                    'Invalid transaction naming scheme "%s", must be "route", "controller" or "service".',
-                    $config['http']['transaction_naming'],
-                ));
+        // Configuration validates $naming against this exact set; the default arm is a
+        // defensive guard that should only be reachable if that validation is bypassed.
+        return match ($naming) {
+            'controller' => ControllerNamingStrategy::class,
+            'route' => RouteNamingStrategy::class,
+            'uri' => UriNamingStrategy::class,
+            'service' => $this->getTransactionNamingServiceServiceId($http),
+            default => throw new \InvalidArgumentException(\sprintf(
+                'Invalid transaction naming scheme "%s", must be "uri", "route", "controller" or "service".',
+                $naming,
+            )),
+        };
+    }
+
+    /**
+     * @param array<string, mixed> $http
+     */
+    private function getTransactionNamingServiceServiceId(array $http): string
+    {
+        if (!isset($http['transaction_naming_service'])) {
+            throw new \LogicException(
+                'When using the "service" transaction naming scheme, the "transaction_naming_service" config parameter must be set.',
+            );
         }
+
+        return (string) $http['transaction_naming_service'];
     }
 }

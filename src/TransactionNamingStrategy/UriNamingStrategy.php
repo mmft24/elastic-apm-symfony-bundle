@@ -3,8 +3,9 @@
 declare(strict_types=1);
 
 /*
- * This file is part of Ekino New Relic bundle.
+ * This file is part of the Elastic APM Symfony Bundle.
  *
+ * (c) mmft24
  * (c) Ekino - Thomas Rabaix <thomas.rabaix@ekino.com>
  *
  * For the full copyright and license information, please view the LICENSE
@@ -20,6 +21,9 @@ final class UriNamingStrategy implements TransactionNamingStrategyInterface
     #[\Override]
     public function getTransactionName(Request $request): string
     {
-        return "{$request->getMethod()} {$request->getRequestUri()}";
+        // Use the path only and drop the query string. The query string can carry
+        // sensitive data (tokens, e-mail addresses, session ids) that must never be
+        // written verbatim into an APM transaction name.
+        return "{$request->getMethod()} {$request->getPathInfo()}";
     }
 }

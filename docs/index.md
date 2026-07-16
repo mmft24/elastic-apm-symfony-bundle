@@ -137,6 +137,7 @@ elastic_apm:
     exceptions:
         enabled: true
         unwrap_exceptions: false  # Also report nested exceptions
+        capture_min_status_code: 500  # Min HTTP status for an HttpException to be reported (lower to 400 for 4xx signal)
         ignored_exceptions:
             - Symfony\Component\HttpKernel\Exception\NotFoundHttpException
 

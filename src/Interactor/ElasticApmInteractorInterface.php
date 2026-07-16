@@ -3,8 +3,9 @@
 declare(strict_types=1);
 
 /*
- * This file is part of Ekino New Relic bundle.
+ * This file is part of the Elastic APM Symfony Bundle.
  *
+ * (c) mmft24
  * (c) Ekino - Thomas Rabaix <thomas.rabaix@ekino.com>
  *
  * For the full copyright and license information, please view the LICENSE
@@ -40,7 +41,7 @@ interface ElasticApmInteractorInterface
      * WARNING: The agent does not allow setting of a custom context yet. These are attached as labels which can have
      * an impact on the size and performance of your indexes.
      *
-     * @param string|int|float $value should be a scalar
+     * @param string|int|float|bool $value should be a scalar
      */
     public function addCustomContext(string $name, $value): bool;
 

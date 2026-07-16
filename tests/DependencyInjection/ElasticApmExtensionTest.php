@@ -9,6 +9,7 @@ use ElasticApmBundle\Interactor\AdaptiveInteractor;
 use ElasticApmBundle\Interactor\BlackholeInteractor;
 use ElasticApmBundle\Interactor\Config;
 use ElasticApmBundle\Interactor\ElasticApmInteractorInterface;
+use ElasticApmBundle\Interactor\LoggingInteractorDecorator;
 use ElasticApmBundle\Listener\CommandListener;
 use ElasticApmBundle\Listener\DeprecationListener;
 use ElasticApmBundle\Listener\ExceptionListener;
@@ -20,6 +21,7 @@ use ElasticApmBundle\TransactionNamingStrategy\TransactionNamingStrategyInterfac
 use ElasticApmBundle\TransactionNamingStrategy\UriNamingStrategy;
 use Matthias\SymfonyDependencyInjectionTest\PhpUnit\AbstractExtensionTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
+use Symfony\Component\DependencyInjection\Reference;
 
 #[CoversClass(ElasticApmExtension::class)]
 final class ElasticApmExtensionTest extends AbstractExtensionTestCase
@@ -93,6 +95,46 @@ final class ElasticApmExtensionTest extends AbstractExtensionTestCase
         );
     }
 
+    public function testLoggingDecoratorIsNotWiredByDefault(): void
+    {
+        $this->load();
+
+        $this->assertContainerBuilderHasAlias(
+            ElasticApmInteractorInterface::class,
+            AdaptiveInteractor::class,
+        );
+    }
+
+    public function testLoggingDecoratorIsWiredWhenEnabled(): void
+    {
+        $this->load(['logging' => true]);
+
+        $this->assertContainerBuilderHasAlias(
+            ElasticApmInteractorInterface::class,
+            LoggingInteractorDecorator::class,
+        );
+        $this->assertContainerBuilderHasServiceDefinitionWithArgument(
+            LoggingInteractorDecorator::class,
+            '$interactor',
+            new Reference(AdaptiveInteractor::class),
+        );
+    }
+
+    public function testLoggingDecoratorWrapsBlackholeWhenDisabled(): void
+    {
+        $this->load(['enabled' => false, 'logging' => true]);
+
+        $this->assertContainerBuilderHasAlias(
+            ElasticApmInteractorInterface::class,
+            LoggingInteractorDecorator::class,
+        );
+        $this->assertContainerBuilderHasServiceDefinitionWithArgument(
+            LoggingInteractorDecorator::class,
+            '$interactor',
+            new Reference(BlackholeInteractor::class),
+        );
+    }
+
     public function testRouteNamingStrategyIsUsedByDefault(): void
     {
         $this->load();
@@ -139,7 +181,7 @@ final class ElasticApmExtensionTest extends AbstractExtensionTestCase
     {
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage(
-            'When using the "service", transaction naming scheme, the "transaction_naming_service" config parameter must be set.',
+            'When using the "service" transaction naming scheme, the "transaction_naming_service" config parameter must be set.',
         );
 
         $this->load(['http' => ['transaction_naming' => 'service']]);

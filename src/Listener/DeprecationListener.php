@@ -3,8 +3,9 @@
 declare(strict_types=1);
 
 /*
- * This file is part of Ekino New Relic bundle.
+ * This file is part of the Elastic APM Symfony Bundle.
  *
+ * (c) mmft24
  * (c) Ekino - Thomas Rabaix <thomas.rabaix@ekino.com>
  *
  * For the full copyright and license information, please view the LICENSE
@@ -14,42 +15,18 @@ declare(strict_types=1);
 namespace ElasticApmBundle\Listener;
 
 use ElasticApmBundle\Exception\DeprecationException;
-use ElasticApmBundle\Interactor\ElasticApmInteractorInterface;
 
-class DeprecationListener
+class DeprecationListener extends AbstractErrorHandlerListener
 {
-    private bool $isRegistered = false;
-
-    public function __construct(
-        private readonly ElasticApmInteractorInterface $interactor,
-    ) {}
-
-    public function register(): void
+    #[\Override]
+    protected function handles(int $type): bool
     {
-        if ($this->isRegistered) {
-            return;
-        }
-        $this->isRegistered = true;
-
-        /** @psalm-suppress UndefinedVariable $prevErrorHandler */
-        $prevErrorHandler = \set_error_handler(function ($type, $msg, $file, $line, $context = []) use (
-            &$prevErrorHandler
-        ) {
-            if (\E_USER_DEPRECATED === $type) {
-                $this->interactor->addContextFromConfig();
-                $this->interactor->noticeThrowable(new DeprecationException($msg, 0, $type, $file, $line));
-            }
-
-            return $prevErrorHandler ? $prevErrorHandler($type, $msg, $file, $line, $context) : false;
-        });
+        return \E_USER_DEPRECATED === $type;
     }
 
-    public function unregister(): void
+    #[\Override]
+    protected function createThrowable(int $type, string $message, string $file, int $line): \Throwable
     {
-        if (!$this->isRegistered) {
-            return;
-        }
-        $this->isRegistered = false;
-        \restore_error_handler();
+        return new DeprecationException($message, 0, $type, $file, $line);
     }
 }

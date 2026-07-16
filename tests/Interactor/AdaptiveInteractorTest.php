@@ -52,7 +52,7 @@ final class AdaptiveInteractorTest extends TestCase
 
     public function testDelegatesSetTransactionName(): void
     {
-        $realInteractor = $this->createMock(ElasticApmInteractorInterface::class);
+        $realInteractor = $this->createStub(ElasticApmInteractorInterface::class);
         $fakeInteractor = $this->createMock(ElasticApmInteractorInterface::class);
 
         $fakeInteractor->expects($this->once())
@@ -68,7 +68,7 @@ final class AdaptiveInteractorTest extends TestCase
 
     public function testDelegatesAddLabel(): void
     {
-        $realInteractor = $this->createMock(ElasticApmInteractorInterface::class);
+        $realInteractor = $this->createStub(ElasticApmInteractorInterface::class);
         $fakeInteractor = $this->createMock(ElasticApmInteractorInterface::class);
 
         $fakeInteractor->expects($this->once())
@@ -84,7 +84,7 @@ final class AdaptiveInteractorTest extends TestCase
 
     public function testDelegatesAddCustomContext(): void
     {
-        $realInteractor = $this->createMock(ElasticApmInteractorInterface::class);
+        $realInteractor = $this->createStub(ElasticApmInteractorInterface::class);
         $fakeInteractor = $this->createMock(ElasticApmInteractorInterface::class);
 
         $fakeInteractor->expects($this->once())
@@ -100,7 +100,7 @@ final class AdaptiveInteractorTest extends TestCase
 
     public function testDelegatesNoticeThrowable(): void
     {
-        $realInteractor = $this->createMock(ElasticApmInteractorInterface::class);
+        $realInteractor = $this->createStub(ElasticApmInteractorInterface::class);
         $fakeInteractor = $this->createMock(ElasticApmInteractorInterface::class);
         $exception = new \RuntimeException('Test');
 
@@ -114,7 +114,7 @@ final class AdaptiveInteractorTest extends TestCase
 
     public function testDelegatesBeginTransaction(): void
     {
-        $realInteractor = $this->createMock(ElasticApmInteractorInterface::class);
+        $realInteractor = $this->createStub(ElasticApmInteractorInterface::class);
         $fakeInteractor = $this->createMock(ElasticApmInteractorInterface::class);
 
         $fakeInteractor->expects($this->once())
@@ -130,7 +130,7 @@ final class AdaptiveInteractorTest extends TestCase
 
     public function testDelegatesBeginCurrentTransaction(): void
     {
-        $realInteractor = $this->createMock(ElasticApmInteractorInterface::class);
+        $realInteractor = $this->createStub(ElasticApmInteractorInterface::class);
         $fakeInteractor = $this->createMock(ElasticApmInteractorInterface::class);
 
         $fakeInteractor->expects($this->once())
@@ -146,7 +146,7 @@ final class AdaptiveInteractorTest extends TestCase
 
     public function testDelegatesEndCurrentTransaction(): void
     {
-        $realInteractor = $this->createMock(ElasticApmInteractorInterface::class);
+        $realInteractor = $this->createStub(ElasticApmInteractorInterface::class);
         $fakeInteractor = $this->createMock(ElasticApmInteractorInterface::class);
 
         $fakeInteractor->expects($this->once())
@@ -162,7 +162,7 @@ final class AdaptiveInteractorTest extends TestCase
 
     public function testDelegatesGetCurrentTransaction(): void
     {
-        $realInteractor = $this->createMock(ElasticApmInteractorInterface::class);
+        $realInteractor = $this->createStub(ElasticApmInteractorInterface::class);
         $fakeInteractor = $this->createMock(ElasticApmInteractorInterface::class);
 
         $fakeInteractor->expects($this->once())
@@ -175,9 +175,26 @@ final class AdaptiveInteractorTest extends TestCase
         $this->assertNull($result);
     }
 
+    public function testDelegatesBeginCurrentSpan(): void
+    {
+        $realInteractor = $this->createStub(ElasticApmInteractorInterface::class);
+        $fakeInteractor = $this->createMock(ElasticApmInteractorInterface::class);
+
+        // beginCurrentSpan must delegate uniformly like every other method, not re-implement the logic.
+        $fakeInteractor->expects($this->once())
+            ->method('beginCurrentSpan')
+            ->with('span', 'type', null, null, null)
+            ->willReturn(null);
+
+        $interactor = new AdaptiveInteractor($realInteractor, $fakeInteractor);
+        $result = $interactor->beginCurrentSpan('span', 'type');
+
+        $this->assertNull($result);
+    }
+
     public function testDelegatesEndCurrentSpan(): void
     {
-        $realInteractor = $this->createMock(ElasticApmInteractorInterface::class);
+        $realInteractor = $this->createStub(ElasticApmInteractorInterface::class);
         $fakeInteractor = $this->createMock(ElasticApmInteractorInterface::class);
 
         $fakeInteractor->expects($this->once())
@@ -193,7 +210,7 @@ final class AdaptiveInteractorTest extends TestCase
 
     public function testDelegatesCaptureCurrentSpan(): void
     {
-        $realInteractor = $this->createMock(ElasticApmInteractorInterface::class);
+        $realInteractor = $this->createStub(ElasticApmInteractorInterface::class);
         $fakeInteractor = $this->createMock(ElasticApmInteractorInterface::class);
         $callback = fn(): string => 'result';
 
@@ -210,7 +227,7 @@ final class AdaptiveInteractorTest extends TestCase
 
     public function testDelegatesSetUserAttributes(): void
     {
-        $realInteractor = $this->createMock(ElasticApmInteractorInterface::class);
+        $realInteractor = $this->createStub(ElasticApmInteractorInterface::class);
         $fakeInteractor = $this->createMock(ElasticApmInteractorInterface::class);
 
         $fakeInteractor->expects($this->once())
@@ -226,7 +243,7 @@ final class AdaptiveInteractorTest extends TestCase
 
     public function testDelegatesAddContextFromConfig(): void
     {
-        $realInteractor = $this->createMock(ElasticApmInteractorInterface::class);
+        $realInteractor = $this->createStub(ElasticApmInteractorInterface::class);
         $fakeInteractor = $this->createMock(ElasticApmInteractorInterface::class);
 
         $fakeInteractor->expects($this->once())

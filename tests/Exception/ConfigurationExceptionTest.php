@@ -13,15 +13,27 @@ final class ConfigurationExceptionTest extends TestCase
 {
     public function testExceptionCanBeCreated(): void
     {
-        $exception = new ConfigurationException('Test message', 0, \E_ERROR, '/path/to/file.php', 42);
+        $previous = new \RuntimeException('cause');
+        $exception = new ConfigurationException('Test message', 7, $previous);
 
-        $this->assertInstanceOf(\ErrorException::class, $exception);
-        $this->assertInstanceOf(ConfigurationException::class, $exception);
         $this->assertSame('Test message', $exception->getMessage());
-        $this->assertSame(0, $exception->getCode());
-        $this->assertSame(\E_ERROR, $exception->getSeverity());
-        $this->assertSame('/path/to/file.php', $exception->getFile());
-        $this->assertSame(42, $exception->getLine());
+        $this->assertSame(7, $exception->getCode());
+        $this->assertSame($previous, $exception->getPrevious());
+    }
+
+    public function testExceptionIsAnInvalidArgumentException(): void
+    {
+        // Configuration preconditions are argument-validation failures, not PHP errors,
+        // so the exception must be catchable as an \InvalidArgumentException.
+        $caught = null;
+
+        try {
+            throw new ConfigurationException('bad config');
+        } catch (\InvalidArgumentException $e) {
+            $caught = $e;
+        }
+
+        $this->assertInstanceOf(ConfigurationException::class, $caught);
     }
 
     public function testExceptionCanBeThrown(): void

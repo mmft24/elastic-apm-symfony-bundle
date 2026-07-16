@@ -61,6 +61,11 @@ return ECSConfig::configure()
         ConcatSpaceFixer::class,
         ['spacing' => 'none'],
     )
+    // Prefix all native function calls with "\" inside namespaced code so the engine
+    // skips the userland-function lookup. Note: this fixer cannot touch first-class
+    // callable syntax (e.g. `strval(...)`) — php-cs-fixer's FunctionsAnalyzer excludes
+    // T_FIRST_CLASS_CALLABLE from function *calls*, so those must be prefixed by hand
+    // (`\strval(...)`) to stay consistent with the rest of the codebase.
     ->withConfiguredRule(
         PhpCsFixer\Fixer\FunctionNotation\NativeFunctionInvocationFixer::class,
         [

@@ -17,16 +17,8 @@ use Symfony\Component\HttpKernel\KernelEvents;
 #[CoversClass(FinishRequestListener::class)]
 final class FinishRequestListenerTest extends TestCase
 {
-    private \PHPUnit\Framework\MockObject\MockObject $interactor;
-    private \PHPUnit\Framework\MockObject\MockObject $namingStrategy;
-    private FinishRequestListener $listener;
-
-    protected function setUp(): void
-    {
-        $this->interactor = $this->createMock(ElasticApmInteractorInterface::class);
-        $this->namingStrategy = $this->createMock(TransactionNamingStrategyInterface::class);
-        $this->listener = new FinishRequestListener($this->interactor, $this->namingStrategy);
-    }
+    private ElasticApmInteractorInterface&\PHPUnit\Framework\MockObject\MockObject $interactor;
+    private TransactionNamingStrategyInterface&\PHPUnit\Framework\MockObject\MockObject $namingStrategy;
 
     public function testGetSubscribedEvents(): void
     {
@@ -38,7 +30,8 @@ final class FinishRequestListenerTest extends TestCase
 
     public function testOnFinishRequestSetsTransactionNameForMainRequest(): void
     {
-        $kernel = $this->createMock(HttpKernelInterface::class);
+        $listener = $this->createListener();
+        $kernel = $this->createStub(HttpKernelInterface::class);
         $request = new Request();
         $event = new FinishRequestEvent($kernel, $request, HttpKernelInterface::MAIN_REQUEST);
 
@@ -54,12 +47,13 @@ final class FinishRequestListenerTest extends TestCase
         $this->interactor->expects($this->once())
             ->method('addContextFromConfig');
 
-        $this->listener->onFinishRequest($event);
+        $listener->onFinishRequest($event);
     }
 
     public function testOnFinishRequestIgnoresSubRequest(): void
     {
-        $kernel = $this->createMock(HttpKernelInterface::class);
+        $listener = $this->createListener();
+        $kernel = $this->createStub(HttpKernelInterface::class);
         $request = new Request();
         $event = new FinishRequestEvent($kernel, $request, HttpKernelInterface::SUB_REQUEST);
 
@@ -72,12 +66,13 @@ final class FinishRequestListenerTest extends TestCase
         $this->interactor->expects($this->never())
             ->method('addContextFromConfig');
 
-        $this->listener->onFinishRequest($event);
+        $listener->onFinishRequest($event);
     }
 
     public function testOnFinishRequestAddsContextFromConfig(): void
     {
-        $kernel = $this->createMock(HttpKernelInterface::class);
+        $listener = $this->createListener();
+        $kernel = $this->createStub(HttpKernelInterface::class);
         $request = new Request();
         $event = new FinishRequestEvent($kernel, $request, HttpKernelInterface::MAIN_REQUEST);
 
@@ -88,31 +83,39 @@ final class FinishRequestListenerTest extends TestCase
         $this->interactor->expects($this->once())
             ->method('addContextFromConfig');
 
-        $this->listener->onFinishRequest($event);
+        $listener->onFinishRequest($event);
     }
 
     public function testOnFinishRequestWithDifferentTransactionNames(): void
     {
-        $kernel = $this->createMock(HttpKernelInterface::class);
+        $kernel = $this->createStub(HttpKernelInterface::class);
         $request = new Request();
         $event = new FinishRequestEvent($kernel, $request, HttpKernelInterface::MAIN_REQUEST);
 
         $transactionNames = ['homepage', 'api_users_list', 'admin_dashboard'];
 
         foreach ($transactionNames as $transactionName) {
-            $this->namingStrategy = $this->createMock(TransactionNamingStrategyInterface::class);
-            $this->interactor = $this->createMock(ElasticApmInteractorInterface::class);
-            $this->listener = new FinishRequestListener($this->interactor, $this->namingStrategy);
+            $namingStrategy = $this->createMock(TransactionNamingStrategyInterface::class);
+            $interactor = $this->createMock(ElasticApmInteractorInterface::class);
+            $listener = new FinishRequestListener($interactor, $namingStrategy);
 
-            $this->namingStrategy->expects($this->once())
+            $namingStrategy->expects($this->once())
                 ->method('getTransactionName')
                 ->willReturn($transactionName);
 
-            $this->interactor->expects($this->once())
+            $interactor->expects($this->once())
                 ->method('setTransactionName')
                 ->with($transactionName);
 
-            $this->listener->onFinishRequest($event);
+            $listener->onFinishRequest($event);
         }
+    }
+
+    private function createListener(): FinishRequestListener
+    {
+        $this->interactor = $this->createMock(ElasticApmInteractorInterface::class);
+        $this->namingStrategy = $this->createMock(TransactionNamingStrategyInterface::class);
+
+        return new FinishRequestListener($this->interactor, $this->namingStrategy);
     }
 }

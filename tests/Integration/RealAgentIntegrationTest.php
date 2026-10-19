@@ -9,14 +9,12 @@ use ElasticApmBundle\Interactor\ElasticApmInteractorInterface;
 use ElasticApmBundle\Interactor\LoggingInteractorDecorator;
 use ElasticApmBundle\Tests\Support\RealAgent;
 use ElasticApmBundle\Tests\Support\RecordingEventSink;
-use PHPUnit\Framework\Attributes\CoversNothing;
 
 /**
  * End to end with the default (adaptive) interactor and the real agent: asserts on what would reach the APM server.
  *
  * Requires a usable agent (see {@see RealAgent}).
  */
-#[CoversNothing]
 final class RealAgentIntegrationTest extends BundleKernelTestCase
 {
     private RecordingEventSink $sink;

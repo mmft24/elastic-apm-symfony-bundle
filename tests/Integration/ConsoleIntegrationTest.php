@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace ElasticApmBundle\Tests\Integration;
 
-use PHPUnit\Framework\Attributes\CoversNothing;
 
 /**
  * Runs real console commands through the FrameworkBundle Application and asserts the exact interactor calls.
  */
-#[CoversNothing]
 final class ConsoleIntegrationTest extends BundleKernelTestCase
 {
     public function testCommandNamesTheTransactionAndRecordsRedactedParameters(): void

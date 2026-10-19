@@ -11,13 +11,11 @@ use ElasticApmBundle\Tests\Integration\Fixtures\IgnoredException;
 use ElasticApmBundle\Tests\Integration\Fixtures\StaticNamingStrategy;
 use ElasticApmBundle\Tests\Integration\Fixtures\TestController;
 use ElasticApmBundle\Tests\Support\RealAgent;
-use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * Handles real requests through HttpKernel and asserts the exact interactor calls the bundle makes.
  */
-#[CoversNothing]
 final class HttpIntegrationTest extends BundleKernelTestCase
 {
     public function testDefaultsNameTheTransactionAfterTheRouteAndAddConfiguredContext(): void

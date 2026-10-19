@@ -155,7 +155,7 @@ final class LogCorrelationExtensionTest extends AbstractExtensionTestCase
         (new ElasticApmExtension())->load([['enabled' => false, 'log_correlation' => true]], $container);
         $container->getAlias('elastic_apm.monolog.trace_context_processor')->setPublic(true);
 
-        $container->compile();
+        $container->compile(true);
 
         $processor = $container->get('elastic_apm.monolog.trace_context_processor');
         $this->assertInstanceOf(TraceContextProcessor::class, $processor);

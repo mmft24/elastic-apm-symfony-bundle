@@ -15,10 +15,12 @@
         "symfony/http-kernel": "^6.4|^7.0|^8.0"
     },
     "suggest": {
-        "ext-elastic_apm": "To send data to Elastic APM. Without it the bundle falls back to a no-op interactor."
+        "ext-elastic_apm": "To send data to Elastic APM. Without it the bundle falls back to a no-op interactor.",
+        "monolog/monolog": "^3.0 to add trace.id/transaction.id/span.id to log records (elastic_apm.log_correlation)."
     },
     "require-dev": {
         "matthiasnoback/symfony-dependency-injection-test": "^6.2",
+        "monolog/monolog": "^3.0",
         "nyholm/symfony-bundle-test": "^3.1",
         "phpstan/extension-installer": "^1.4",
         "phpstan/phpstan": "^2.1",

@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `failure`) on `console.terminate` when `commands` is enabled.
 - Kernel integration tests (HTTP and console) and real-agent tests; CI now runs against the real agent, the
   lowest dependencies (Symfony 6.4) and with the agent disabled.
+- Opt-in log ↔ trace correlation (`elastic_apm.log_correlation`): a Monolog 3 processor adds the
+  current `trace.id`, `transaction.id` and `span.id` to every record's `extra` so Kibana can link logs
+  to traces. Disabled by default; `monolog/monolog` ^3 is suggested, not required.
 
 ### Changed
 

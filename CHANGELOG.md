@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Support for Symfony 8 on PHP 8.3+ (`symfony/*` constraints widened to `^6.4|^7.0|^8.0`).
 - Configurable HTTP capture threshold for `ExceptionListener`.
+- Symfony Messenger distributed tracing (`elastic_apm.messenger`, on by default when `symfony/messenger` is
+  installed): outgoing messages carry the producer's trace headers in an `ApmTracingStamp`, and each message consumed
+  by a worker becomes its own transaction in that trace, with result/outcome, handler exceptions unwrapped from
+  `HandlerFailedException`, and `ignored_retryable_exceptions` to skip expected failures that will be retried. An
+  `elastic_apm.messenger.middleware` middleware covers buses that do not dispatch `SendMessageToTransportsEvent`.
 - `report_silenced_errors` option (default `false`) and an overridable
   `AbstractErrorHandlerListener::shouldReport()` filtering hook for the warning and deprecation listeners.
 - Console transactions get a result (`CLI <exit code>`) and outcome (`success` for exit code 0, otherwise

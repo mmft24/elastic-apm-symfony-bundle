@@ -23,6 +23,7 @@ use ElasticApmBundle\Listener\CommandListener;
 use ElasticApmBundle\Listener\DeprecationListener;
 use ElasticApmBundle\Listener\ExceptionListener;
 use ElasticApmBundle\Listener\WarningListener;
+use ElasticApmBundle\Messenger\WorkerTransactionListener;
 use ElasticApmBundle\Monolog\TraceContextProcessor;
 use ElasticApmBundle\TransactionNamingStrategy\ControllerNamingStrategy;
 use ElasticApmBundle\TransactionNamingStrategy\RouteNamingStrategy;
@@ -34,6 +35,7 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Extension\Extension;
 use Symfony\Component\DependencyInjection\Loader;
 use Symfony\Component\DependencyInjection\Reference;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
  * This is the class that loads and manages your bundle configuration.
@@ -129,6 +131,24 @@ final class ElasticApmExtension extends Extension
 
             $container->getDefinition(WarningListener::class)
                 ->addMethodCall('setReportSilencedErrors', [$config['report_silenced_errors']]);
+        }
+
+        if ($config['messenger']['enabled']) {
+            if (!\interface_exists(MessageBusInterface::class)) {
+                throw new \LogicException(
+                    'The "elastic_apm.messenger" feature requires symfony/messenger. Try running "composer require symfony/messenger".',
+                );
+            }
+
+            $loader->load('messenger.php');
+
+            $container->getDefinition(WorkerTransactionListener::class)
+                ->setArguments(
+                    [
+                        '$transactionType' => $config['messenger']['transaction_type'],
+                        '$ignoredRetryableExceptions' => $config['messenger']['ignored_retryable_exceptions'],
+                    ],
+                );
         }
 
         if ($config['log_correlation']['enabled']) {

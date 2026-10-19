@@ -19,6 +19,7 @@ use ElasticApmBundle\Interactor\ElasticApmInteractorInterface;
 use Symfony\Component\Console\ConsoleEvents;
 use Symfony\Component\Console\Event\ConsoleCommandEvent;
 use Symfony\Component\Console\Event\ConsoleErrorEvent;
+use Symfony\Component\Console\Event\ConsoleTerminateEvent;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 final readonly class CommandListener implements EventSubscriberInterface
@@ -83,6 +84,8 @@ final readonly class CommandListener implements EventSubscriberInterface
         return [
             ConsoleEvents::COMMAND => ['onConsoleCommand', 0],
             ConsoleEvents::ERROR => ['onConsoleError', 0],
+            // Late, so listeners that change the exit code via setExitCode() have already run.
+            ConsoleEvents::TERMINATE => ['onConsoleTerminate', -1024],
         ];
     }
 
@@ -164,5 +167,22 @@ final readonly class CommandListener implements EventSubscriberInterface
         // noticeThrowable() already walks the whole getPrevious() chain when exception unwrapping is
         // enabled, so reporting the cause here as well would double-report every nested exception.
         $this->interactor->noticeThrowable($event->getError());
+    }
+
+    /**
+     * Mirrors what the agent does for HTTP transactions ("HTTP 2xx" + outcome), which it cannot do for commands.
+     */
+    public function onConsoleTerminate(ConsoleTerminateEvent $event): void
+    {
+        $transaction = $this->interactor->getCurrentTransaction();
+
+        if (null === $transaction) {
+            return;
+        }
+
+        $exitCode = $event->getExitCode();
+
+        $transaction->setResult('CLI '.$exitCode);
+        $transaction->setOutcome(0 === $exitCode ? 'success' : 'failure');
     }
 }

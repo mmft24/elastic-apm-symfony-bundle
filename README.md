@@ -91,7 +91,7 @@ elastic_apm:
         enabled: true                     # If true, enhances CLI commands with options and arguments (default: true)
         explicitly_collect_exceptions: true # Turn this off if you are experiencing multiple reports of exceptions.
     messenger:
-        enabled: true                     # Defaults to true when symfony/messenger is installed, false otherwise
+        enabled: false                    # Opt-in; requires symfony/messenger. Read the rollout notes below first
         transaction_type: message         # Type of the transaction started for each consumed message
         ignored_retryable_exceptions: []  # Exception classes/interfaces not reported while the message will be retried
     log_correlation:
@@ -184,15 +184,22 @@ monolog:
 
 ## Symfony Messenger
 
-When `symfony/messenger` is installed, the bundle traces messages across processes:
+Opt in (requires `symfony/messenger`) to trace messages across processes:
+
+```yaml
+elastic_apm:
+    messenger: true
+```
 
 - **Producer side:** every message sent to a transport gets an `ElasticApmBundle\Messenger\ApmTracingStamp` carrying
-  the W3C `traceparent`/`tracestate` headers of the current transaction. This hooks into Messenger's
+  the W3C `traceparent`/`tracestate` headers of the active span (or of the current transaction when no span is
+  active), so the consumer's transaction becomes its child. This hooks into Messenger's
   `SendMessageToTransportsEvent`, so it works for every bus without any bus configuration. The stamp survives both
   the default PHP serializer and Symfony's `Serializer` transport serializer.
 - **Worker side:** `messenger:consume` no longer reports one endless transaction for the whole worker process. The
-  transaction the agent started for the process is discarded and each consumed message gets its own transaction,
-  named `messenger:consume <transport> <MessageClass>`, that continues the producer's trace. It ends with result
+  transaction the agent started for the process is discarded as soon as the worker starts and each consumed message gets its own transaction,
+  named `messenger:consume <transport> <MessageClass>`, that continues the producer's trace, including the sample
+  rate carried in `tracestate`. It ends with result
   `MSG 2xx`/outcome `success` when handled, or `MSG 5xx`/outcome `failure` when it failed, with the configured
   custom labels/context and memory usage label attached. No transaction is carried over from one message to the
   next, including for skipped or rejected messages.
@@ -221,8 +228,20 @@ framework:
                     - elastic_apm.messenger.middleware
 ```
 
-Set `elastic_apm.messenger.enabled: false` to turn the whole feature off. Without the `elastic_apm` extension
-nothing is stamped and no transaction is started.
+Without the `elastic_apm` extension nothing is stamped and no transaction is started.
+
+### Rolling it out safely
+
+The stamp becomes part of every message's wire format, and a consumer that does not have the
+`ElasticApmBundle\Messenger\ApmTracingStamp` class cannot decode a stamped message (the PHP serializer fails with
+"class not found", Symfony's `Serializer` with "could not decode stamp"), so Messenger rejects it. This affects
+pods still running an older release during a rolling deploy and other applications consuming the same transport.
+
+- Enable the feature (or at least deploy a bundle version that has the stamp class) on **every consumer before any
+  producer** starts stamping.
+- Do **not roll back** to a version without the bundle's stamp class while stamped messages are still queued;
+  drain the transports first, or disable `elastic_apm.messenger` and wait for the queues to empty before
+  downgrading.
 
 ## Log ↔ trace correlation
 

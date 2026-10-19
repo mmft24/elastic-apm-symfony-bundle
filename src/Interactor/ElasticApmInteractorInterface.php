@@ -74,6 +74,19 @@ interface ElasticApmInteractorInterface
     ): ?TransactionInterface;
 
     /**
+     * Starts a new transaction and makes it current, continuing the distributed trace described by the given
+     * W3C trace context headers (`traceparent`, and `tracestate` which carries the sample rate).
+     *
+     * @param array<string, string> $headers header name (case-insensitive) => value
+     */
+    public function beginCurrentTransactionFromHeaders(
+        string $name,
+        string $type,
+        array $headers,
+        ?float $timestamp = null,
+    ): ?TransactionInterface;
+
+    /**
      * Stop instrumenting the current transaction immediately.
      *
      * {@link https://www.elastic.co/guide/en/apm/agent/php/current/public-api.html#api-transaction-interface-end}

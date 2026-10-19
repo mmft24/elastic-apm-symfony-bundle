@@ -63,6 +63,13 @@ final class BlackholeInteractorTest extends TestCase
         $this->assertNull($result);
     }
 
+    public function testBeginCurrentTransactionFromHeadersReturnsNull(): void
+    {
+        $result = $this->interactor->beginCurrentTransactionFromHeaders('name', 'type', ['traceparent' => 'x']);
+
+        $this->assertNull($result);
+    }
+
     public function testEndCurrentTransactionReturnsTrue(): void
     {
         $result = $this->interactor->endCurrentTransaction();

@@ -19,7 +19,7 @@ final class RecordingInteractor implements ElasticApmInteractorInterface
     /** @var list<array{0: string, 1: list<mixed>}> */
     public array $calls = [];
 
-    /** @var list<array{name: string, type: string, tracingData: ?DistributedTracingData}> */
+    /** @var list<array{name: string, type: string, headers: array<string, string>}> */
     public array $begun = [];
 
     /** @var list<\Throwable> */
@@ -92,11 +92,30 @@ final class RecordingInteractor implements ElasticApmInteractorInterface
         ?DistributedTracingData $distributedTracingData = null,
     ): ?TransactionInterface {
         $this->calls[] = ['beginCurrentTransaction', [$name, $type, $timestamp, $distributedTracingData]];
-        $this->begun[] = ['name' => $name, 'type' => $type, 'tracingData' => $distributedTracingData];
 
         $this->current = ($this->transactionFactory)();
 
         return $this->current;
+    }
+
+    #[\Override]
+    public function beginCurrentTransactionFromHeaders(
+        string $name,
+        string $type,
+        array $headers,
+        ?float $timestamp = null,
+    ): ?TransactionInterface {
+        $this->calls[] = ['beginCurrentTransactionFromHeaders', [$name, $type, $headers, $timestamp]];
+        $this->begun[] = ['name' => $name, 'type' => $type, 'headers' => $headers];
+
+        $begun = ($this->transactionFactory)();
+
+        // Like the agent: only a recording transaction replaces the current one.
+        if (null !== $begun && !$begun->isNoop()) {
+            $this->current = $begun;
+        }
+
+        return $begun;
     }
 
     #[\Override]

@@ -16,8 +16,8 @@
     },
     "suggest": {
         "ext-elastic_apm": "To send data to Elastic APM. Without it the bundle falls back to a no-op interactor.",
-        "symfony/messenger": "To propagate distributed tracing through Symfony Messenger and trace consumed messages as transactions.",
-        "monolog/monolog": "^3.0 to add trace.id/transaction.id/span.id to log records (elastic_apm.log_correlation)."
+        "monolog/monolog": "^3.0 to add trace.id/transaction.id/span.id to log records (elastic_apm.log_correlation).",
+        "symfony/messenger": "To propagate distributed tracing through Symfony Messenger and trace consumed messages as transactions."
     },
     "require-dev": {
         "matthiasnoback/symfony-dependency-injection-test": "^6.2",

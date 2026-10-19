@@ -31,9 +31,20 @@ final class MessengerExtensionTest extends AbstractExtensionTestCase
         return [new ElasticApmExtension()];
     }
 
-    public function testServicesAreRegisteredByDefault(): void
+    public function testServicesAreAbsentByDefault(): void
     {
         $this->load();
+
+        foreach (self::SERVICES as $service) {
+            $this->assertContainerBuilderNotHasService($service);
+        }
+
+        $this->assertContainerBuilderNotHasService('elastic_apm.messenger.middleware');
+    }
+
+    public function testServicesAreRegisteredWhenEnabled(): void
+    {
+        $this->load(['messenger' => true]);
 
         foreach (self::SERVICES as $service) {
             $this->assertContainerBuilderHasService($service);
@@ -88,7 +99,7 @@ final class MessengerExtensionTest extends AbstractExtensionTestCase
     {
         $container = new ContainerBuilder();
         $container->registerExtension(new ElasticApmExtension());
-        $container->loadFromExtension('elastic_apm', []);
+        $container->loadFromExtension('elastic_apm', ['messenger' => true]);
         $container->registerForAutoconfiguration(EventSubscriberInterface::class)
             ->addTag('kernel.event_subscriber');
         $container->setAlias('test.middleware', 'elastic_apm.messenger.middleware')->setPublic(true);

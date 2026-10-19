@@ -99,8 +99,7 @@ final class MessengerTracingIntegrationTest extends TestCase
 
         foreach ($this->interactor->begun as $begun) {
             $this->assertSame('messenger:consume '.self::TRANSPORT.' '.TestMessage::class, $begun['name']);
-            $this->assertSame(self::PRODUCER_TRACE_ID, $begun['tracingData']?->traceId);
-            $this->assertSame(self::PRODUCER_PARENT_ID, $begun['tracingData']->parentId);
+            $this->assertSame(['traceparent' => self::PRODUCER_TRACEPARENT], $begun['headers']);
         }
 
         $this->assertSame(
@@ -132,7 +131,7 @@ final class MessengerTracingIntegrationTest extends TestCase
         $this->runWorker($bus, 1);
 
         $this->assertCount(1, $this->interactor->begun);
-        $this->assertSame(self::PRODUCER_TRACE_ID, $this->interactor->begun[0]['tracingData']?->traceId);
+        $this->assertSame(['traceparent' => self::PRODUCER_TRACEPARENT], $this->interactor->begun[0]['headers']);
         $this->assertSame('MSG 2xx', $this->messageTransactions[0]->result);
         $this->assertSame(1, $this->messageTransactions[0]->endCalls);
         $this->assertNull($this->interactor->current);
@@ -185,7 +184,7 @@ final class MessengerTracingIntegrationTest extends TestCase
             $this->interactor->callNames(),
             static fn(string $call): bool => \in_array(
                 $call,
-                ['beginCurrentTransaction', 'endCurrentTransaction'],
+                ['beginCurrentTransactionFromHeaders', 'endCurrentTransaction'],
                 true
             ),
         ));
@@ -193,8 +192,8 @@ final class MessengerTracingIntegrationTest extends TestCase
         $this->assertSame(
             \array_merge(
                 ...\array_fill(0, \count($this->interactor->begun), [
-                    'beginCurrentTransaction',
-                    'endCurrentTransaction'
+                    'beginCurrentTransactionFromHeaders',
+                    'endCurrentTransaction',
                 ])
             ),
             $lifecycle,

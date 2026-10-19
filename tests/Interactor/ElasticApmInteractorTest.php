@@ -187,6 +187,43 @@ final class ElasticApmInteractorTest extends TestCase
         $transaction->end();
     }
 
+    public function testBeginCurrentTransactionFromHeadersContinuesTheTraceWithItsSampleRate(): void
+    {
+        $this->interactor->endCurrentTransaction();
+
+        $transaction = $this->interactor->beginCurrentTransactionFromHeaders(
+            'consumer',
+            'message',
+            // Header names are matched case-insensitively, like HTTP headers.
+            ['TraceParent' => '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', 'tracestate' => 'es=s:0.5'],
+            1_700_000_000_000_000.0,
+        );
+
+        $this->assertSame($transaction, ElasticApm::getCurrentTransaction());
+        $recorded = $this->endTransaction();
+        $this->assertSame('consumer', $recorded['name']);
+        $this->assertSame('message', $recorded['type']);
+        $this->assertSame('0af7651916cd43dd8448eb211c80319c', $recorded['trace_id']);
+        $this->assertSame('b7ad6b7169203331', $recorded['parent_id']);
+        $this->assertEqualsWithDelta(0.5, $recorded['sample_rate'], 0.0001);
+        $this->assertEqualsWithDelta(1_700_000_000_000_000, $recorded['timestamp'], 1);
+    }
+
+    public function testBeginCurrentTransactionFromHeadersStartsANewTraceWithoutUsableHeaders(): void
+    {
+        $this->interactor->endCurrentTransaction();
+
+        $this->interactor->beginCurrentTransactionFromHeaders(
+            'consumer',
+            'message',
+            ['traceparent' => '00-nonsense-01'],
+        );
+
+        $recorded = $this->endTransaction();
+        $this->assertSame('consumer', $recorded['name']);
+        $this->assertArrayNotHasKey('parent_id', $recorded);
+    }
+
     public function testBeginAndEndCurrentSpan(): void
     {
         $span = $this->interactor->beginCurrentSpan('SELECT', 'db', 'mysql', 'query');

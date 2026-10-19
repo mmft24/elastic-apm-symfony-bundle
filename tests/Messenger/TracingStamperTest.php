@@ -30,6 +30,39 @@ final class TracingStamperTest extends TestCase
         $this->assertSame($headers, $envelope->last(ApmTracingStamp::class)?->getHeaders());
     }
 
+    public function testStampsEnvelopeWithActiveSpanHeadersSoTheConsumerIsItsChild(): void
+    {
+        $spanHeaders = ['traceparent' => '00-'.self::PRODUCER_TRACE_ID.'-00f067aa0ba902b7-01', 'tracestate' => 'es=s:1'];
+        $transaction = $this->createTransactionSpy(currentSpan: $this->createSpan($spanHeaders))->transaction;
+
+        $envelope = $this->createStamper($transaction)->stamp(new Envelope(new TestMessage()));
+
+        $this->assertSame($spanHeaders, $envelope->last(ApmTracingStamp::class)?->getHeaders());
+    }
+
+    public function testFallsBackToTransactionWhenActiveSpanHasEnded(): void
+    {
+        $span = $this->createSpan(['traceparent' => 'ended span'], ended: true);
+        $transaction = $this->createTransactionSpy(currentSpan: $span)->transaction;
+
+        $envelope = $this->createStamper($transaction)->stamp(new Envelope(new TestMessage()));
+
+        $this->assertSame(
+            ['traceparent' => self::PRODUCER_TRACEPARENT],
+            $envelope->last(ApmTracingStamp::class)?->getHeaders(),
+        );
+    }
+
+    // After the worker discards its process transaction, the agent may still report it as current.
+    public function testDoesNotStampFromAnEndedTransaction(): void
+    {
+        $spy = $this->createTransactionSpy();
+        $spy->transaction->discard();
+        $envelope = new Envelope(new TestMessage());
+
+        $this->assertSame($envelope, $this->createStamper($spy->transaction)->stamp($envelope));
+    }
+
     public function testPassesThroughWithoutCurrentTransaction(): void
     {
         $envelope = new Envelope(new TestMessage());
@@ -37,10 +70,18 @@ final class TracingStamperTest extends TestCase
         $this->assertSame($envelope, $this->createStamper(null)->stamp($envelope));
     }
 
+    public function testDoesNotStampFromANoopTransaction(): void
+    {
+        $envelope = new Envelope(new TestMessage());
+        $stamper = $this->createStamper($this->createTransactionSpy(noop: true)->transaction);
+
+        $this->assertSame($envelope, $stamper->stamp($envelope));
+    }
+
     public function testDoesNotAddEmptyStampWhenTransactionInjectsNothing(): void
     {
         $envelope = new Envelope(new TestMessage());
-        $stamper = $this->createStamper($this->createTransactionSpy([], noop: true)->transaction);
+        $stamper = $this->createStamper($this->createTransactionSpy([])->transaction);
 
         $this->assertSame($envelope, $stamper->stamp($envelope));
     }

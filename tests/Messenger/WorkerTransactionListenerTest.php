@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace ElasticApmBundle\Tests\Messenger;
 
-use Elastic\Apm\DistributedTracingData;
+use Elastic\Apm\TransactionInterface;
 use ElasticApmBundle\Interactor\BlackholeInteractor;
 use ElasticApmBundle\Messenger\ApmTracingStamp;
 use ElasticApmBundle\Messenger\WorkerTransactionListener;
@@ -24,6 +24,7 @@ use Symfony\Component\Messenger\Event\WorkerMessageHandledEvent;
 use Symfony\Component\Messenger\Event\WorkerMessageReceivedEvent;
 use Symfony\Component\Messenger\Event\WorkerMessageSkipEvent;
 use Symfony\Component\Messenger\Event\WorkerRunningEvent;
+use Symfony\Component\Messenger\Event\WorkerStartedEvent;
 use Symfony\Component\Messenger\Event\WorkerStoppedEvent;
 use Symfony\Component\Messenger\Exception\DelayedMessageHandlingException;
 use Symfony\Component\Messenger\Exception\HandlerFailedException;
@@ -60,6 +61,7 @@ final class WorkerTransactionListenerTest extends TestCase
 
         foreach (
             [
+                WorkerStartedEvent::class,
                 WorkerMessageReceivedEvent::class,
                 WorkerMessageHandledEvent::class,
                 WorkerMessageFailedEvent::class,
@@ -85,12 +87,19 @@ final class WorkerTransactionListenerTest extends TestCase
         $this->assertCount(1, $this->interactor->begun);
         $this->assertSame('messenger:consume async '.TestMessage::class, $this->interactor->begun[0]['name']);
         $this->assertSame('message', $this->interactor->begun[0]['type']);
+        $this->assertSame(['traceparent' => self::PRODUCER_TRACEPARENT], $this->interactor->begun[0]['headers']);
+        $this->assertSame($this->messageTransactions[0]->transaction, $this->interactor->current);
+    }
 
-        $tracingData = $this->interactor->begun[0]['tracingData'];
-        $this->assertInstanceOf(DistributedTracingData::class, $tracingData);
-        $this->assertSame(self::PRODUCER_TRACE_ID, $tracingData->traceId);
-        $this->assertSame(self::PRODUCER_PARENT_ID, $tracingData->parentId);
-        $this->assertTrue($tracingData->isSampled);
+    // tracestate carries the sample rate (es=s:<rate>); the agent needs it to continue the trace faithfully.
+    public function testReceiveHandsEveryStampedHeaderToTheAgent(): void
+    {
+        $headers = ['traceparent' => self::PRODUCER_TRACEPARENT, 'tracestate' => 'es=s:0.25,other=vendor'];
+        $envelope = new Envelope(new TestMessage(), [new ApmTracingStamp($headers)]);
+
+        $this->createListener()->onMessageReceived(new WorkerMessageReceivedEvent($envelope, 'async'));
+
+        $this->assertSame($headers, $this->interactor->begun[0]['headers']);
     }
 
     public function testReceiveUsesConfiguredTransactionType(): void
@@ -102,42 +111,12 @@ final class WorkerTransactionListenerTest extends TestCase
         $this->assertSame('queue', $this->interactor->begun[0]['type']);
     }
 
-    public function testReceiveContinuesUnsampledTrace(): void
+    public function testReceiveWithoutStampStartsNewTrace(): void
     {
-        $envelope = $this->envelope('00-'.self::PRODUCER_TRACE_ID.'-'.self::PRODUCER_PARENT_ID.'-00');
-
-        $this->createListener()->onMessageReceived(new WorkerMessageReceivedEvent($envelope, 'async'));
-
-        $this->assertFalse($this->interactor->begun[0]['tracingData']?->isSampled);
-    }
-
-    /**
-     * @return iterable<string, array{?string}>
-     */
-    public static function envelopesWithoutUsableTraceParent(): iterable
-    {
-        yield 'no stamp' => [null];
-        yield 'malformed header' => ['00-nonsense-01'];
-    }
-
-    #[DataProvider('envelopesWithoutUsableTraceParent')]
-    public function testReceiveStartsNewTraceWithoutUsableTraceParent(?string $traceParent): void
-    {
-        $this->createListener()->onMessageReceived(
-            new WorkerMessageReceivedEvent($this->envelope($traceParent), 'async')
-        );
+        $this->createListener()->onMessageReceived(new WorkerMessageReceivedEvent($this->envelope(null), 'async'));
 
         $this->assertCount(1, $this->interactor->begun);
-        $this->assertNull($this->interactor->begun[0]['tracingData']);
-    }
-
-    public function testReceiveWithStampMissingTraceParentStartsNewTrace(): void
-    {
-        $envelope = new Envelope(new TestMessage(), [new ApmTracingStamp(['tracestate' => 'es=s:1'])]);
-
-        $this->createListener()->onMessageReceived(new WorkerMessageReceivedEvent($envelope, 'async'));
-
-        $this->assertNull($this->interactor->begun[0]['tracingData']);
+        $this->assertSame([], $this->interactor->begun[0]['headers']);
     }
 
     public function testReceiveDoesNotBeginWhenMessageWillNotBeHandled(): void
@@ -149,6 +128,43 @@ final class WorkerTransactionListenerTest extends TestCase
 
         $this->assertSame([], $this->interactor->begun);
         $this->assertFalse($this->processTransaction->discarded);
+    }
+
+    public function testWorkerStartedDiscardsProcessTransactionOnce(): void
+    {
+        $listener = $this->createListener();
+
+        $listener->onWorkerStarted(new WorkerStartedEvent($this->worker()));
+        $listener->onWorkerStarted(new WorkerStartedEvent($this->worker()));
+        // Like agent 1.15, the discarded transaction is still reported as current.
+        $this->assertSame($this->processTransaction->transaction, $this->interactor->current);
+        $listener->onMessageReceived(new WorkerMessageReceivedEvent($this->envelope(), 'async'));
+
+        $this->assertTrue($this->processTransaction->discarded);
+        $this->assertSame(1, $this->processTransaction->endCalls);
+        $this->assertCount(1, $this->interactor->begun);
+    }
+
+    public function testNoopMessageTransactionIsNotTrackedNorEnded(): void
+    {
+        $noop = $this->createTransactionSpy([], noop: true);
+        $interactor = new RecordingInteractor(
+            static fn(): TransactionInterface => $noop->transaction,
+            $this->processTransaction->transaction,
+        );
+        $listener = new WorkerTransactionListener($interactor);
+        $envelope = $this->envelope();
+
+        $listener->onWorkerStarted(new WorkerStartedEvent($this->worker()));
+        $listener->onMessageReceived(new WorkerMessageReceivedEvent($envelope, 'async'));
+        $listener->onMessageHandled(new WorkerMessageHandledEvent($envelope, 'async'));
+        $listener->onWorkerStopped(new WorkerStoppedEvent($this->worker()));
+
+        $this->assertSame(0, $noop->endCalls);
+        $this->assertNull($noop->result);
+        $this->assertSame(['beginCurrentTransactionFromHeaders'], $interactor->callNames());
+        // Only the already-ended process transaction remains current, and TracingStamper ignores ended ones.
+        $this->assertTrue($interactor->current?->hasEnded());
     }
 
     public function testReceiveDoesNotDiscardNoopOrEndedTransactions(): void
@@ -176,7 +192,7 @@ final class WorkerTransactionListenerTest extends TestCase
         $this->assertSame(1, $transaction->endCalls);
         $this->assertNull($this->interactor->current);
         $this->assertSame(
-            ['beginCurrentTransaction', 'addContextFromConfig', 'endCurrentTransaction'],
+            ['beginCurrentTransactionFromHeaders', 'addContextFromConfig', 'endCurrentTransaction'],
             $this->interactor->callNames(),
         );
     }
@@ -196,7 +212,7 @@ final class WorkerTransactionListenerTest extends TestCase
         $this->assertSame(1, $transaction->endCalls);
         $this->assertSame([$exception], $this->interactor->noticed);
         $this->assertSame(
-            ['beginCurrentTransaction', 'addContextFromConfig', 'noticeThrowable', 'endCurrentTransaction'],
+            ['beginCurrentTransactionFromHeaders', 'addContextFromConfig', 'noticeThrowable', 'endCurrentTransaction'],
             $this->interactor->callNames(),
         );
     }
@@ -404,6 +420,7 @@ final class WorkerTransactionListenerTest extends TestCase
         $listener = new WorkerTransactionListener(new BlackholeInteractor());
         $envelope = $this->envelope();
 
+        $listener->onWorkerStarted(new WorkerStartedEvent($this->worker()));
         $listener->onMessageReceived(new WorkerMessageReceivedEvent($envelope, 'async'));
         $listener->onMessageFailed(new WorkerMessageFailedEvent($envelope, 'async', new \RuntimeException()));
         $listener->onMessageHandled(new WorkerMessageHandledEvent($envelope, 'async'));

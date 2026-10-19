@@ -99,33 +99,6 @@ abstract class ErrorHandlerListenerTestCase extends TestCase
         $this->assertCount(1, $this->baseCalls);
     }
 
-    public function testAtSilencedErrorIsNotReportedButStillChained(): void
-    {
-        $this->listener->register();
-
-        $this->interactor->expects($this->never())->method('addContextFromConfig');
-        $this->interactor->expects($this->never())->method('noticeThrowable');
-
-        @\trigger_error('silenced', $this->reportedLevel());
-
-        // The previous handler decides for itself what to do with silenced errors.
-        $this->assertSame([[$this->reportedLevel(), 'silenced']], $this->baseCallsWithoutLocation());
-    }
-
-    public function testErrorExcludedByErrorReportingIsNotReported(): void
-    {
-        $this->listener->register();
-
-        $this->interactor->expects($this->never())->method('noticeThrowable');
-
-        \error_reporting(0);
-        \trigger_error('excluded by zero', $this->reportedLevel());
-        \error_reporting(\E_ALL & ~$this->reportedLevel());
-        \trigger_error('excluded by mask', $this->reportedLevel());
-
-        $this->assertCount(2, $this->baseCalls);
-    }
-
     public function testSilencedErrorsAreReportedWhenEnabled(): void
     {
         $this->listener->setReportSilencedErrors(true);
@@ -136,17 +109,6 @@ abstract class ErrorHandlerListenerTestCase extends TestCase
         @\trigger_error('silenced', $this->reportedLevel());
         \error_reporting(0);
         \trigger_error('excluded', $this->reportedLevel());
-    }
-
-    public function testSilencedErrorsCanBeDisabledAgain(): void
-    {
-        $this->listener->setReportSilencedErrors(true);
-        $this->listener->setReportSilencedErrors(false);
-        $this->listener->register();
-
-        $this->interactor->expects($this->never())->method('noticeThrowable');
-
-        @\trigger_error('silenced', $this->reportedLevel());
     }
 
     public function testOtherErrorLevelsAreNotReported(): void
@@ -288,6 +250,71 @@ abstract class ErrorHandlerListenerTestCase extends TestCase
         $this->assertCount(1, $this->baseCalls);
     }
 
+    public function testUnregisterBelowALaterHandlerKeepsTheChainIntact(): void
+    {
+        $this->baseReturn = false;
+        $this->listener->register();
+        $ours = $this->installedHandler();
+
+        $laterCalls = [];
+        /** @var callable|null $laterPrevious assigned once the handler below is installed */
+        $laterPrevious = null;
+        $laterHandler = static function (int $type, string $message, string $file, int $line) use (
+            &$laterCalls,
+            &$laterPrevious,
+        ): mixed {
+            $laterCalls[] = $message;
+
+            return \is_callable($laterPrevious) ? $laterPrevious($type, $message, $file, $line) : false;
+        };
+        $laterPrevious = \set_error_handler($laterHandler);
+        $later = $this->installedHandler();
+
+        try {
+            $this->listener->unregister();
+
+            // Popping blindly would have removed the later handler instead of ours.
+            $this->assertSame($later, $this->installedHandler());
+
+            $this->interactor->expects($this->never())->method('addContextFromConfig');
+            $this->interactor->expects($this->never())->method('noticeThrowable');
+
+            \trigger_error('after unregister', $this->reportedLevel());
+
+            $this->assertSame(['after unregister'], $laterCalls);
+            $this->assertSame([[$this->reportedLevel(), 'after unregister']], $this->baseCallsWithoutLocation());
+            // The base handler returned false through the chain, so PHP's built-in handler still ran.
+            $this->assertSame('after unregister', \error_get_last()['message'] ?? null);
+        } finally {
+            \restore_error_handler();
+        }
+
+        // Ours is on top again and still a pass-through; a second unregister() now removes it.
+        $this->assertSame($ours, $this->installedHandler());
+        $this->listener->unregister();
+        $this->assertSame($this->baseHandler, $this->installedHandler());
+    }
+
+    public function testRegisterAfterUnregisterBelowALaterHandlerDoesNotStackASecondCopy(): void
+    {
+        $this->listener->register();
+        \set_error_handler(static fn(): bool => false);
+
+        try {
+            $this->listener->unregister();
+            $this->listener->register();
+        } finally {
+            \restore_error_handler();
+        }
+
+        $this->interactor->expects($this->once())->method('noticeThrowable');
+        \trigger_error('reactivated', $this->reportedLevel());
+        $this->assertCount(1, $this->baseCalls);
+
+        $this->listener->unregister();
+        $this->assertSame($this->baseHandler, $this->installedHandler());
+    }
+
     public function testUnregisterWithoutRegisterIsNoop(): void
     {
         $this->interactor->expects($this->never())->method('noticeThrowable');
@@ -344,21 +371,6 @@ abstract class ErrorHandlerListenerTestCase extends TestCase
         }
     }
 
-    public function testSilencedErrorDoesNotPoisonDedupCache(): void
-    {
-        $this->listener->register();
-
-        $this->interactor->expects($this->once())->method('noticeThrowable');
-
-        // The silenced occurrence must not be remembered, otherwise the loud one on the same line would be dropped.
-        for ($i = 0; $i < 2; ++$i) {
-            0 === $i ? @\trigger_error('same site', $this->reportedLevel()) : \trigger_error(
-                'same site',
-                $this->reportedLevel()
-            );
-        }
-    }
-
     public function testSubclassCanCustomiseFiltering(): void
     {
         $listener = $this->createFilteringListener($this->interactor);
@@ -371,13 +383,11 @@ abstract class ErrorHandlerListenerTestCase extends TestCase
 
             \trigger_error('ignored by subclass', $this->reportedLevel());
             \trigger_error('kept', $this->reportedLevel());
-            // The parent's silencing check still applies.
-            @\trigger_error('kept', $this->reportedLevel());
         } finally {
             $listener->unregister();
         }
 
-        $this->assertCount(3, $this->baseCalls);
+        $this->assertCount(2, $this->baseCalls);
     }
 
     /**
@@ -399,7 +409,7 @@ abstract class ErrorHandlerListenerTestCase extends TestCase
     /**
      * @return list<array{int, string}>
      */
-    private function baseCallsWithoutLocation(): array
+    protected function baseCallsWithoutLocation(): array
     {
         return \array_map(static fn(array $call): array => [$call[0], $call[1]], $this->baseCalls);
     }

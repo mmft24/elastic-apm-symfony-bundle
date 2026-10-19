@@ -124,7 +124,8 @@ elastic_apm:
     warnings:
         enabled: false
 
-    # Also report warnings/deprecations silenced with @ or excluded by error_reporting() (default: false)
+    # Also report warnings silenced with @ or excluded by error_reporting() (default: false).
+    # Deprecations are always reported, like Symfony's ErrorHandler does.
     report_silenced_errors: false
 
     # Memory usage tracking
@@ -240,7 +241,7 @@ The `elastic_apm.interactor` configuration accepts a service ID implementing `El
 | `ElasticApmBundle\Interactor\AdaptiveInteractor` (default) | Checks once per request if the APM extension is loaded |
 | `ElasticApmBundle\Interactor\ElasticApmInteractor` | Direct communication with the APM agent |
 | `ElasticApmBundle\Interactor\BlackholeInteractor` | Silently ignores all APM calls |
-| `auto` | Checks at container build time that the extension is loaded and the agent enabled |
+| `auto` | Alias of `AdaptiveInteractor`: detects the agent at runtime, so a container built with the agent disabled still reports once it is enabled |
 
 **Note**: When `enabled: false`, the `BlackholeInteractor` is always used regardless of configuration.
 

@@ -12,6 +12,7 @@ return static function (RoutingConfigurator $routes): void {
     $routes->add('not_found', '/not-found')->controller(TestController::class.'::notFound');
     $routes->add('unavailable', '/unavailable')->controller(TestController::class.'::unavailable');
     $routes->add('suspicious', '/suspicious')->controller(TestController::class.'::suspicious');
+    $routes->add('deprecated', '/deprecated')->controller(TestController::class.'::deprecated');
     $routes->add('ignored', '/ignored')->controller(TestController::class.'::ignored');
     $routes->add('ignored_subclass', '/ignored-subclass')->controller(TestController::class.'::ignoredSubclass');
 };

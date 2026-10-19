@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace ElasticApmBundle\Tests\Integration;
 
+use ElasticApmBundle\Interactor\AdaptiveInteractor;
 use ElasticApmBundle\Interactor\BlackholeInteractor;
-use ElasticApmBundle\Interactor\ElasticApmInteractor;
 use ElasticApmBundle\Interactor\ElasticApmInteractorInterface;
 use ElasticApmBundle\Tests\Integration\Fixtures\IgnoredException;
 use ElasticApmBundle\Tests\Integration\Fixtures\StaticNamingStrategy;
 use ElasticApmBundle\Tests\Integration\Fixtures\TestController;
-use ElasticApmBundle\Tests\Support\RealAgent;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\HttpFoundation\Exception\SuspiciousOperationException;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\HttpKernel\HttpKernel;
 
 /**
  * Handles real requests through HttpKernel and asserts the exact interactor calls the bundle makes.
@@ -133,9 +136,7 @@ final class HttpIntegrationTest extends BundleKernelTestCase
     {
         yield '404 below default threshold' => ['/not-found', null, false];
         yield '503 at or above default threshold' => ['/unavailable', null, true];
-        yield 'request exception (400) below default threshold' => ['/suspicious', null, false];
         yield '404 captured with threshold 400' => ['/not-found', 400, true];
-        yield 'request exception captured with threshold 400' => ['/suspicious', 400, true];
         yield '503 ignored with threshold 504' => ['/unavailable', 504, false];
     }
 
@@ -148,6 +149,53 @@ final class HttpIntegrationTest extends BundleKernelTestCase
         self::request($uri);
 
         $this->assertCount($reported ? 1 : 0, self::recorder()->callsTo('noticeThrowable'));
+    }
+
+    public function testRequestExceptionFromAControllerIsConvertedByHttpKernelBeforeTheListener(): void
+    {
+        self::bootWithConfig(self::recordingConfig(['exceptions' => ['capture_min_status_code' => 400]]));
+
+        $response = self::request('/suspicious');
+
+        // HttpKernel::handle() wraps request exceptions in a BadRequestHttpException before kernel.exception, so the
+        // listener's RequestExceptionInterface branch is not what keeps them below the default threshold here.
+        $this->assertSame(400, $response->getStatusCode());
+        $noticed = self::recorder()->callsTo('noticeThrowable');
+        $this->assertCount(1, $noticed);
+        $this->assertInstanceOf(BadRequestHttpException::class, $noticed[0][0]);
+        $this->assertInstanceOf(SuspiciousOperationException::class, $noticed[0][0]->getPrevious());
+    }
+
+    /**
+     * @return iterable<string, array{int|null, bool}>
+     */
+    public static function unconvertedRequestExceptionThresholds(): iterable
+    {
+        yield 'below default threshold' => [null, false];
+        yield 'captured with threshold 400' => [400, true];
+    }
+
+    #[DataProvider('unconvertedRequestExceptionThresholds')]
+    public function testUnconvertedRequestExceptionCountsAs400(?int $threshold, bool $reported): void
+    {
+        $exceptions = null === $threshold ? [] : ['capture_min_status_code' => $threshold];
+        self::bootWithConfig(self::recordingConfig(['exceptions' => $exceptions]));
+
+        // terminateWithException() (used for exceptions escaping outside handle(), e.g. from kernel.terminate)
+        // dispatches kernel.exception with the original exception, without HttpKernel's BadRequest conversion.
+        $httpKernel = self::getContainer()->get('http_kernel');
+        \assert($httpKernel instanceof HttpKernel);
+        $exception = new SuspiciousOperationException('Untrusted Host');
+
+        \ob_start();
+
+        try {
+            $httpKernel->terminateWithException($exception, Request::create('/'));
+        } finally {
+            \ob_end_clean();
+        }
+
+        $this->assertSame($reported ? [[$exception]] : [], self::recorder()->callsTo('noticeThrowable'));
     }
 
     public function testIgnoredExceptionsAndTheirSubclassesAreNotReported(): void
@@ -190,6 +238,20 @@ final class HttpIntegrationTest extends BundleKernelTestCase
         $this->assertContains('Adding context from config', self::logger()->messages());
     }
 
+    public function testTriggerDeprecationIsReportedWithDefaultConfig(): void
+    {
+        self::bootWithConfig(self::recordingConfig(['deprecations' => true]));
+
+        self::request('/deprecated');
+
+        // Kernel boot may raise deprecations of its own; only the controller's matters here.
+        $messages = \array_map(
+            static fn(array $call): string => $call[0] instanceof \Throwable ? $call[0]->getMessage() : '',
+            self::recorder()->callsTo('noticeThrowable'),
+        );
+        $this->assertContains('Since acme/package 1.2: Calling "deprecated()" is deprecated.', $messages);
+    }
+
     public function testAutoInteractorBootsAndHandlesRequestsInThisEnvironment(): void
     {
         self::bootWithConfig(['interactor' => 'auto', 'deprecations' => false, 'warnings' => false]);
@@ -200,7 +262,7 @@ final class HttpIntegrationTest extends BundleKernelTestCase
 
         $this->assertSame(500, $response->getStatusCode());
         $this->assertInstanceOf(
-            RealAgent::isUsable() ? ElasticApmInteractor::class : BlackholeInteractor::class,
+            AdaptiveInteractor::class,
             self::getContainer()->get(ElasticApmInteractorInterface::class),
         );
     }

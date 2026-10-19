@@ -269,7 +269,7 @@ final class ElasticApmBundleTest extends TestCase
         });
     }
 
-    public function testCompiledContainerIgnoresSilencedErrorsByDefault(): void
+    public function testCompiledContainerIgnoresSilencedWarningsButNotDeprecationsByDefault(): void
     {
         $interactor = $this->createMock(ElasticApmInteractorInterface::class);
         $container = $this->compileContainer([], $interactor);
@@ -278,7 +278,8 @@ final class ElasticApmBundleTest extends TestCase
         $this->assertTrue($container->has('elastic_apm.listener.warning'));
         $this->assertTrue($container->has('elastic_apm.listener.deprecation'));
 
-        $interactor->expects($this->exactly(2))->method('noticeThrowable');
+        // Only the silenced warning is dropped: deprecations are reported even when silenced, like Symfony does.
+        $interactor->expects($this->exactly(3))->method('noticeThrowable');
 
         $this->withBaseHandler(function (): void {
             $this->bundle->boot();

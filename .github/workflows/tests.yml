@@ -22,7 +22,7 @@ jobs:
           - php: '8.3'
             dependencies: 'lowest'
             agent: true
-          # Extension installed but agent disabled: exercises the adaptive/auto fallback to the blackhole interactor.
+          # Extension installed but agent disabled: exercises the adaptive (and "auto") runtime fallback to the blackhole interactor.
           - php: '8.4'
             dependencies: 'highest'
             agent: false

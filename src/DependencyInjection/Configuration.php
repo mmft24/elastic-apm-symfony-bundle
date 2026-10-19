@@ -31,7 +31,7 @@ final class Configuration implements ConfigurationInterface
             ->children()
                 ->booleanNode('enabled')->defaultTrue()->end()
                 ->scalarNode('interactor')
-                    ->info('Service id of the interactor to use, or "auto" to detect the elastic_apm extension.')
+                    ->info('Service id of the interactor to use, or "auto" to detect the elastic_apm agent at runtime.')
                     ->validate()
                         ->ifTrue(static fn($v): bool => !\is_string($v) || '' === $v)
                         ->thenInvalid(
@@ -79,7 +79,7 @@ final class Configuration implements ConfigurationInterface
                 ->end()
                 ->booleanNode('report_silenced_errors')
                     ->info(
-                        'Also report warnings and deprecations silenced with "@" or excluded by error_reporting().',
+                        'Also report warnings silenced with "@" or excluded by error_reporting(). Deprecations are always reported.',
                     )
                     ->defaultFalse()
                 ->end()

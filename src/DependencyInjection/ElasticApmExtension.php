@@ -21,7 +21,9 @@ use ElasticApmBundle\Interactor\ElasticApmInteractor;
 use ElasticApmBundle\Interactor\ElasticApmInteractorInterface;
 use ElasticApmBundle\Interactor\LoggingInteractorDecorator;
 use ElasticApmBundle\Listener\CommandListener;
+use ElasticApmBundle\Listener\DeprecationListener;
 use ElasticApmBundle\Listener\ExceptionListener;
+use ElasticApmBundle\Listener\WarningListener;
 use ElasticApmBundle\TransactionNamingStrategy\ControllerNamingStrategy;
 use ElasticApmBundle\TransactionNamingStrategy\RouteNamingStrategy;
 use ElasticApmBundle\TransactionNamingStrategy\TransactionNamingStrategyInterface;
@@ -109,10 +111,16 @@ final class ElasticApmExtension extends Extension
 
         if ($config['deprecations']['enabled']) {
             $loader->load('deprecation_listener.php');
+
+            $container->getDefinition(DeprecationListener::class)
+                ->addMethodCall('setReportSilencedErrors', [$config['report_silenced_errors']]);
         }
 
         if ($config['warnings']['enabled']) {
             $loader->load('warning_listener.php');
+
+            $container->getDefinition(WarningListener::class)
+                ->addMethodCall('setReportSilencedErrors', [$config['report_silenced_errors']]);
         }
     }
 

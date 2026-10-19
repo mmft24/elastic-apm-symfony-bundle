@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ElasticApmBundle\Tests\TransactionNamingStrategy;
 
+use ElasticApmBundle\Tests\TransactionNamingStrategy\Fixtures\NonStaticController;
 use ElasticApmBundle\TransactionNamingStrategy\ControllerNamingStrategy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
@@ -96,6 +97,27 @@ final class ControllerNamingStrategyTest extends TestCase
         $result = $this->strategy->getTransactionName($request);
 
         $this->assertSame('Callback controller: DateTime::createFromFormat()', $result);
+    }
+
+    public function testGetTransactionNameWithClassNameAndNonStaticMethodArray(): void
+    {
+        // Regression: [Class::class, 'nonStaticAction'] is what PHP route configs store in _controller. It is not
+        // is_callable() on PHP 8, and used to be named "Unknown Symfony controller".
+        $request = new Request();
+        $request->attributes->set('_controller', [NonStaticController::class, 'action']);
+
+        $this->assertSame(
+            'Callback controller: '.NonStaticController::class.'::action()',
+            $this->strategy->getTransactionName($request),
+        );
+    }
+
+    public function testGetTransactionNameWithMalformedArrayFallsBackToUnknown(): void
+    {
+        $request = new Request();
+        $request->attributes->set('_controller', ['only-one-element']);
+
+        $this->assertSame('Unknown Symfony controller', $this->strategy->getTransactionName($request));
     }
 
     public function testGetTransactionNameWithCallableString(): void

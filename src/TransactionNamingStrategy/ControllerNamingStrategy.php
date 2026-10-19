@@ -40,10 +40,11 @@ final class ControllerNamingStrategy implements TransactionNamingStrategyInterfa
             }
         }
 
-        if (\is_array($controller) && \is_callable($controller)) {
-            // A callable array's first element may be an object (e.g. [$controller, 'action'])
-            // or a class name; resolving it through a mixed-typed helper keeps both static
-            // analysers happy, since they infer conflicting types for the array element.
+        // Not gated on is_callable(): routes configured as [Controller::class, 'action'] reference a non-static
+        // method, which PHP 8 does not consider callable before the controller resolver instantiates the class.
+        if (\is_array($controller) && isset($controller[0], $controller[1]) && \is_string($controller[1])) {
+            // The first element may be an object (e.g. [$controller, 'action']) or a class name; resolving it
+            // through a mixed-typed helper keeps both static analysers happy, since they infer conflicting types.
             return 'Callback controller: '.$this->resolveClassName($controller[0]).'::'.$controller[1].'()';
         }
 

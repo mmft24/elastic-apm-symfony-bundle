@@ -79,7 +79,7 @@ elastic_apm:
     exceptions:
        enabled: true                      # If true, sends exceptions (default: true)
        unwrap_exceptions: false           # If true, also sends the previous/nested exceptions (default: false)
-       capture_min_status_code: 500       # Min HTTP status an HttpException must carry to be reported; lower to 400 to capture 4xx signal (default: 500)
+       capture_min_status_code: 500       # Min HTTP status an HttpException must carry to be reported; lower to 400 to capture 4xx signal (default: 500). Request exceptions (e.g. SuspiciousOperationException) count as 400
        ignored_exceptions:                # List of exception classes to ignore (subclasses are ignored too)
           - An\Ignored\Exception
     http:
@@ -95,6 +95,11 @@ elastic_apm:
 
 > **Note:** sensitive command options/arguments (those whose name contains `password`, `token`, `secret`,
 > `api_key`, `dsn`, …) are automatically redacted before being sent to APM.
+
+When `commands` is enabled, the bundle also sets the result and outcome of the current transaction when a command
+terminates, like the agent does for HTTP requests: the result is `CLI <exit code>` (e.g. `CLI 0`, `CLI 1`) and the
+outcome is `success` for exit code 0 and `failure` otherwise. Exit codes changed by other `console.terminate`
+listeners are respected.
 
 ## Enhanced RUM instrumentation
 
@@ -121,7 +126,7 @@ This bundle comes with a few services that may be suitable for you.
 | `ElasticApmBundle\Interactor\AdaptiveInteractor` | This is the default interactor. It will check once per request if the agent extension is installed or not. | 
 | `ElasticApmBundle\Interactor\ElasticApmInteractor` | This interactor communicates with the Elastic APM agent. It is the one decorator that actually does some work. | 
 | `ElasticApmBundle\Interactor\BlackholeInteractor` | This interactor silently drops any calls. | 
-| `auto` | This value will check if the Elastic APM PHP extension is installed when you build your container. | 
+| `auto` | This value will check, when you build your container, if the Elastic APM PHP extension is installed and the agent is enabled (with `ELASTIC_APM_ENABLED=false` the agent API is not loaded, so the blackhole interactor is used). | 
 
 Note that if you set `elastic_apm.enabled: false` you will always use the `BlackholeInteractor` no matter what value 
 used for `elastic_apm.interactor`.
@@ -199,17 +204,24 @@ This bundle includes comprehensive unit tests. You can run them in several ways:
 
 #### Using Docker (Recommended)
 
-The easiest way to run tests is using Docker, which includes the required `elastic_apm` PHP extension:
+The easiest way to run tests is using Docker. The image includes the `elastic_apm` PHP extension with the agent
+enabled and `ELASTIC_APM_DISABLE_SEND=true`, so the tests drive the real agent without ever contacting an APM server:
 
 ```bash
-# Build the Docker image
+# Build the Docker image (PHP 8.3 by default; use --build-arg PHP_VERSION=8.4 for 8.4)
 docker build -t elastic-apm-symfony-bundle-test .
 
-# Run all tests
-docker run --rm --volume $(pwd):/app elastic-apm-symfony-bundle-test:latest
+# Install dependencies (composer.lock is not committed) and run all tests
+docker run --rm --volume $(pwd):/app elastic-apm-symfony-bundle-test:latest sh -c 'composer update && ./vendor/bin/phpunit'
+
+# Lowest supported dependencies (Symfony 6.4)
+docker run --rm --volume $(pwd):/app elastic-apm-symfony-bundle-test:latest sh -c 'composer update --prefer-lowest && ./vendor/bin/phpunit'
+
+# Extension installed but agent disabled: exercises the fallback to the blackhole interactor
+docker run --rm --volume $(pwd):/app -e ELASTIC_APM_ENABLED=false elastic-apm-symfony-bundle-test:latest ./vendor/bin/phpunit
 
 # Run tests with coverage
-docker run --rm --volume $(pwd):/app elastic-apm-symfony-bundle-test:latest ELASTIC_APM_ENABLED=true XDEBUG_MODE=coverage ./vendor/bin/phpunit --coverage-html coverage-report
+docker run --rm --volume $(pwd):/app -e XDEBUG_MODE=coverage elastic-apm-symfony-bundle-test:latest ./vendor/bin/phpunit --coverage-html coverage-report
 
 # Run specific test file
 docker run --rm --volume $(pwd):/app elastic-apm-symfony-bundle-test:latest ./vendor/bin/phpunit tests/Interactor/ElasticApmInteractorTest.php
@@ -236,13 +248,20 @@ composer install
 ./vendor/bin/phpunit tests/Interactor/ElasticApmInteractorTest.php
 ```
 
-**Note:** Some tests require the `elastic_apm` PHP extension. Tests that require this extension will be automatically skipped if the extension is not available. See the [official installation guide](https://www.elastic.co/guide/en/apm/agent/php/current/setup.html).
+**Note:** Some tests drive the real agent and need the `elastic_apm` extension loaded **and** the agent enabled
+(`ELASTIC_APM_ENABLED` not `false`; set `ELASTIC_APM_DISABLE_SEND=true` to keep it from sending anything). Without
+that, they are skipped: `ElasticApmInteractorTest`, `RealAgentIntegrationTest` and the `CommandListenerTest` cases that
+mock `Elastic\Apm\TransactionInterface`. Everything else, including the kernel integration tests in
+`tests/Integration` (which use a recording interactor), runs anywhere. See the
+[official installation guide](https://www.elastic.co/guide/en/apm/agent/php/current/setup.html).
 
 ### Continuous Integration
 
 This project uses GitHub Actions for continuous integration. The workflow automatically:
 
-- **Runs PHPUnit tests** on PHP 8.3 and 8.4
+- **Runs PHPUnit tests** on PHP 8.3 and 8.4 against the real agent, failing if any test is skipped
+- **Runs the lowest supported dependencies** (`composer update --prefer-lowest`, Symfony 6.4) on PHP 8.3
+- **Runs with the agent disabled** (`ELASTIC_APM_ENABLED=false`) to cover the fallback interactors
 - **Generates code coverage** reports (PHP 8.3 only)
 - **Checks code style** (if php-cs-fixer is configured)
 - **Executes on**:

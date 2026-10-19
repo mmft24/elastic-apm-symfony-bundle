@@ -8,13 +8,24 @@ on:
 
 jobs:
   tests:
-    name: PHPUnit Tests (PHP ${{ matrix.php }})
+    name: PHPUnit (PHP ${{ matrix.php }}, ${{ matrix.dependencies }} deps, agent ${{ matrix.agent && 'enabled' || 'disabled' }})
     runs-on: ubuntu-latest
 
     strategy:
       fail-fast: false
       matrix:
         php: ['8.3', '8.4']
+        dependencies: ['highest']
+        agent: [true]
+        include:
+          # Symfony 6.4, psr/log 1, PHPUnit 12: the lowest versions composer.json allows.
+          - php: '8.3'
+            dependencies: 'lowest'
+            agent: true
+          # Extension installed but agent disabled: exercises the adaptive/auto fallback to the blackhole interactor.
+          - php: '8.4'
+            dependencies: 'highest'
+            agent: false
 
     steps:
       - name: Checkout code
@@ -30,22 +41,32 @@ jobs:
             -t elastic-apm-test:${{ matrix.php }} \
             .
 
+      # composer.lock is not committed, so this resolves fresh for each PHP version.
       - name: Install dependencies
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/app \
             elastic-apm-test:${{ matrix.php }} \
-            composer install --prefer-dist --no-progress --no-suggest
+            composer update --prefer-dist --no-progress ${{ matrix.dependencies == 'lowest' && '--prefer-lowest' || '' }}
 
-      - name: Run PHPUnit tests
+      - name: Show resolved versions
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/app \
             elastic-apm-test:${{ matrix.php }} \
-            ./vendor/bin/phpunit --testdox
+            sh -c "composer show | grep -E '^(symfony/(console|framework-bundle|http-kernel)|phpunit/phpunit|psr/log) '"
+
+      # With the agent enabled nothing may be skipped: the real ElasticApmInteractor tests must run against the agent.
+      - name: Run PHPUnit tests
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/app \
+            -e ELASTIC_APM_ENABLED=${{ matrix.agent }} \
+            elastic-apm-test:${{ matrix.php }} \
+            ./vendor/bin/phpunit --testdox ${{ matrix.agent && '--fail-on-skipped' || '' }}
 
       - name: Run tests with coverage
-        if: matrix.php == '8.3'
+        if: matrix.php == '8.3' && matrix.dependencies == 'highest'
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/app \
@@ -62,7 +83,7 @@ jobs:
         with:
           php-version: '8.3'
       - name: Install dependencies
-        run: composer install --prefer-dist --no-progress --no-suggest
+        run: composer install --prefer-dist --no-progress
       - name: Run ECS check
         run: vendor/bin/ecs check
 
@@ -75,7 +96,7 @@ jobs:
         with:
           php-version: '8.3'
       - name: Install dependencies
-        run: composer install --prefer-dist --no-progress --no-suggest
+        run: composer install --prefer-dist --no-progress
       - name: Run PHPStan
         run: vendor/bin/phpstan analyse
 
@@ -88,7 +109,7 @@ jobs:
         with:
           php-version: '8.3'
       - name: Install dependencies
-        run: composer install --prefer-dist --no-progress --no-suggest
+        run: composer install --prefer-dist --no-progress
       - name: Run Psalm
         run: vendor/bin/psalm
 
@@ -101,6 +122,6 @@ jobs:
         with:
           php-version: '8.3'
       - name: Install dependencies
-        run: composer install --prefer-dist --no-progress --no-suggest
+        run: composer install --prefer-dist --no-progress
       - name: Run Rector (dry-run)
         run: vendor/bin/rector process --dry-run

@@ -16,6 +16,7 @@ namespace ElasticApmBundle\Listener;
 
 use ElasticApmBundle\Interactor\ElasticApmInteractorInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+use Symfony\Component\HttpFoundation\Exception\RequestExceptionInterface;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
@@ -55,12 +56,31 @@ final readonly class ExceptionListener implements EventSubscriberInterface
         // HTTP errors below the configured threshold (500 by default) are expected client-side
         // noise; 5xx errors are genuine server failures and must reach APM. Lower the threshold
         // via exceptions.capture_min_status_code to also capture 4xx signal.
-        if ($exception instanceof HttpExceptionInterface && $exception->getStatusCode() < $this->captureMinStatusCode) {
+        $statusCode = $this->getClientFacingStatusCode($exception);
+        if (null !== $statusCode && $statusCode < $this->captureMinStatusCode) {
             return;
         }
 
         $this->interactor->addContextFromConfig();
         $this->interactor->noticeThrowable($exception);
+    }
+
+    /**
+     * The status code Symfony answers with for this exception, or null when it is a genuine server error.
+     */
+    private function getClientFacingStatusCode(\Throwable $exception): ?int
+    {
+        if ($exception instanceof HttpExceptionInterface) {
+            return $exception->getStatusCode();
+        }
+
+        // Mirrors Symfony's FlattenException: request exceptions (e.g. SuspiciousOperationException for a forged
+        // Host header, BadRequestException) are answered with a 400, not a 500.
+        if ($exception instanceof RequestExceptionInterface) {
+            return Response::HTTP_BAD_REQUEST;
+        }
+
+        return null;
     }
 
     private function isIgnored(\Throwable $exception): bool

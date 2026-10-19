@@ -155,6 +155,16 @@ elastic_apm:
         enabled: true
         # Disable if experiencing duplicate exception reports
         explicitly_collect_exceptions: true
+
+    # Add trace.id / transaction.id / span.id to Monolog records (requires monolog/monolog ^3)
+    log_correlation:
+        enabled: false
+        channels: []    # Restrict to channels (default: all)
+        handlers: []    # Restrict to handlers
+        field_names:
+            trace_id: trace.id
+            transaction_id: transaction.id
+            span_id: span.id
 ```
 
 ## Transaction Naming Strategies

@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configurable HTTP capture threshold for `ExceptionListener`.
 - `report_silenced_errors` option (default `false`) and an overridable
   `AbstractErrorHandlerListener::shouldReport()` filtering hook for the warning and deprecation listeners.
+- Opt-in log ↔ trace correlation (`elastic_apm.log_correlation`): a Monolog 3 processor adds the
+  current `trace.id`, `transaction.id` and `span.id` to every record's `extra` so Kibana can link logs
+  to traces. Disabled by default; `monolog/monolog` ^3 is suggested, not required.
 
 ### Changed
 

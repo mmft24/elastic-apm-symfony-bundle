@@ -14,12 +14,21 @@ declare(strict_types=1);
 
 namespace ElasticApmBundle\DependencyInjection;
 
+use Symfony\Component\Config\Definition\Builder\ArrayNodeDefinition;
 use Symfony\Component\Config\Definition\Builder\TreeBuilder;
 use Symfony\Component\Config\Definition\ConfigurationInterface;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 final class Configuration implements ConfigurationInterface
 {
+    /**
+     * @param bool|null $messengerAvailable whether symfony/messenger is installed; null detects it
+     */
+    public function __construct(
+        private readonly ?bool $messengerAvailable = null,
+    ) {}
+
     #[\Override]
     public function getConfigTreeBuilder(): TreeBuilder
     {
@@ -163,6 +172,35 @@ final class Configuration implements ConfigurationInterface
             ->end()
         ;
 
+        $this->addMessengerSection($rootNode);
+
         return $treeBuilder;
+    }
+
+    private function addMessengerSection(ArrayNodeDefinition $rootNode): void
+    {
+        $messenger = $rootNode->children()->arrayNode('messenger');
+        $messenger->info('Distributed tracing across Symfony Messenger and one transaction per consumed message.');
+
+        if ($this->messengerAvailable ?? \interface_exists(MessageBusInterface::class)) {
+            $messenger->canBeDisabled();
+        } else {
+            $messenger->canBeEnabled();
+        }
+
+        $messenger
+            ->children()
+                ->scalarNode('transaction_type')
+                    ->defaultValue('message')
+                    ->cannotBeEmpty()
+                ->end()
+                ->arrayNode('ignored_retryable_exceptions')
+                    ->info(
+                        'Exception classes/interfaces not reported to APM when the failed message will be retried.',
+                    )
+                    ->scalarPrototype()->end()
+                ->end()
+            ->end()
+        ;
     }
 }

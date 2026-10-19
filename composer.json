@@ -16,7 +16,8 @@
     },
     "suggest": {
         "ext-elastic_apm": "To send data to Elastic APM. Without it the bundle falls back to a no-op interactor.",
-        "monolog/monolog": "^3.0 to add trace.id/transaction.id/span.id to log records (elastic_apm.log_correlation)."
+        "monolog/monolog": "^3.0 to add trace.id/transaction.id/span.id to log records (elastic_apm.log_correlation).",
+        "symfony/messenger": "To propagate distributed tracing through Symfony Messenger and trace consumed messages as transactions."
     },
     "require-dev": {
         "matthiasnoback/symfony-dependency-injection-test": "^6.2",
@@ -28,7 +29,11 @@
         "phpunit/phpunit": "^12.5|^13.0",
         "rector/rector": "^2.2",
         "symfony/framework-bundle": "^6.4|^7.0|^8.0",
+        "symfony/messenger": "^6.4|^7.0|^8.0",
         "symfony/phpunit-bridge": "^8.0.0",
+        "symfony/property-access": "^6.4|^7.0|^8.0",
+        "symfony/property-info": "^6.4|^7.0|^8.0",
+        "symfony/serializer": "^6.4|^7.0|^8.0",
         "symplify/easy-coding-standard": "^13.0",
         "vimeo/psalm": "^6.13"
     },

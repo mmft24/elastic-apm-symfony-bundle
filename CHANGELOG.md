@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Support for Symfony 8 on PHP 8.3+ (`symfony/*` constraints widened to `^6.4|^7.0|^8.0`).
 - Configurable HTTP capture threshold for `ExceptionListener`.
+- Opt-in log ↔ trace correlation (`elastic_apm.log_correlation`): a Monolog 3 processor adds the
+  current `trace.id`, `transaction.id` and `span.id` to every record's `extra` so Kibana can link logs
+  to traces. Disabled by default; `monolog/monolog` ^3 is suggested, not required.
 
 ### Changed
 

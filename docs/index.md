@@ -124,6 +124,9 @@ elastic_apm:
     warnings:
         enabled: false
 
+    # Also report warnings/deprecations silenced with @ or excluded by error_reporting() (default: false)
+    report_silenced_errors: false
+
     # Memory usage tracking
     track_memory_usage: false
     memory_usage_label: memory_usage

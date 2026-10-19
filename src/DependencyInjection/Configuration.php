@@ -85,6 +85,12 @@ final readonly class Configuration implements ConfigurationInterface
                 ->arrayNode('warnings')
                     ->canBeDisabled()
                 ->end()
+                ->booleanNode('report_silenced_errors')
+                    ->info(
+                        'Also report warnings and deprecations silenced with "@" or excluded by error_reporting().',
+                    )
+                    ->defaultFalse()
+                ->end()
                 ->arrayNode('custom_labels')
                     ->scalarPrototype()->end()
                 ->end()

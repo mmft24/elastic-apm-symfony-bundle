@@ -70,6 +70,7 @@ elastic_apm:
     interactor: ~                         # The interactor service that is used. Setting enabled=false will override this value 
     deprecations: true                    # If true, reports E_USER_DEPRECATED to Elastic APM (default: true)
     warnings: true                        # If true, reports E_WARNING/E_USER_WARNING to Elastic APM (default: true)
+    report_silenced_errors: false         # If true, also reports warnings/deprecations silenced with @ or excluded by error_reporting() (default: false)
     track_memory_usage: false             # If true, records peak memory usage
     memory_usage_label: memory_usage      # The name of the custom label to write memory usage to
     custom_labels:                        # Labels added to every transaction
@@ -104,6 +105,27 @@ When `commands` is enabled, the bundle also sets the result and outcome of the c
 terminates, like the agent does for HTTP requests: the result is `CLI <exit code>` (e.g. `CLI 0`, `CLI 1`) and the
 outcome is `success` for exit code 0 and `failure` otherwise. Exit codes changed by other `console.terminate`
 listeners are respected.
+
+## Warnings and deprecations
+
+The warning and deprecation listeners install a PHP error handler at kernel boot and remove it at shutdown.
+
+- Errors silenced with `@` or excluded by `error_reporting()` are **not** reported unless
+  `report_silenced_errors: true` is set.
+- The handler always delegates to the previously registered error handler and returns its result unchanged (or
+  `false` when there is none), so PHP's own error logging and `error_get_last()` behave as if the bundle were not
+  installed.
+- Identical errors (same level, message, file and line) are reported once per request / Messenger message.
+
+To filter further, extend `WarningListener` or `DeprecationListener`, override
+`shouldReport(int $type, string $message, string $file, int $line): bool` (call the parent to keep the level and
+silencing checks) and swap the class on the bundle's service definition from a compiler pass, which keeps its
+public visibility, `kernel.reset` tag and configuration:
+
+```php
+$container->getDefinition(\ElasticApmBundle\Listener\WarningListener::class)
+    ->setClass(\App\Apm\FilteredWarningListener::class);
+```
 
 ## Enhanced RUM instrumentation
 

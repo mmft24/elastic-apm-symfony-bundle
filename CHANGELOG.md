@@ -40,11 +40,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   semantics.
 - Error-handler deduplication cache is now scoped per transaction.
 - Hardened command parameter redaction and stopped double-reporting exception causes.
-- Warnings and deprecations silenced with `@` or excluded by `error_reporting()` are no longer reported to APM;
-  set `report_silenced_errors: true` to restore the previous behaviour.
+- **Behaviour change:** the warning and deprecation listeners now actually register their error handlers (see
+  Fixed). In 2.0.0 they never did, so after upgrading warnings and deprecations start showing up in APM. Set
+  `warnings: false` / `deprecations: false` to keep them out.
+- **Behaviour change:** warnings silenced with `@` or excluded by `error_reporting()` are not reported to APM; set
+  `report_silenced_errors: true` to report them. Deprecations are always reported whether silenced or not, like
+  Symfony's ErrorHandler does, since `trigger_deprecation()` and doctrine/deprecations emit them with `@`.
+- **Behaviour change:** with the `controller` transaction naming strategy, `[Controller::class, 'action']`
+  controllers are now named `Callback controller: App\Controller::action()` instead of
+  `Unknown Symfony controller`. Dashboards, alerts or queries keyed on the old name need updating.
+- **Behaviour change:** `interactor: auto` now resolves to `AdaptiveInteractor` and detects the agent at runtime
+  instead of when the container is compiled. Before, a container warmed up with the agent disabled (e.g. a Docker
+  build with `ELASTIC_APM_ENABLED=false`) baked in the blackhole interactor and silently reported nothing in
+  production.
 - `ExceptionListener` treats request exceptions (`RequestExceptionInterface`, e.g. `SuspiciousOperationException`,
-  `BadRequestException`) as HTTP 400, like Symfony does, so they are no longer reported as server errors unless
-  `capture_min_status_code` is 400 or lower.
+  `BadRequestException`) that reach `kernel.exception` unconverted (e.g. through
+  `HttpKernel::terminateWithException()` or a custom kernel) as HTTP 400, like Symfony does, so they are not reported
+  as server errors unless `capture_min_status_code` is 400 or lower. On the main request HttpKernel already converts
+  them to a `BadRequestHttpException` before the listener runs.
 
 ### Fixed
 
@@ -57,6 +70,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   disabled (`ELASTIC_APM_ENABLED=false`), which fataled with `Class "Elastic\Apm\ElasticApm" not found`.
 - The `controller` transaction naming strategy names `[Controller::class, 'action']` controllers instead of
   reporting them as `Unknown Symfony controller`.
+- Unregistering the warning or deprecation listener while another error handler had been registered after it
+  popped that other handler and broke the chain. The listener now only removes its handler when it is on top and
+  otherwise stays installed as a pass-through that reports nothing.
 
 ## [2.0.0]
 

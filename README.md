@@ -70,7 +70,7 @@ elastic_apm:
     interactor: ~                         # The interactor service that is used. Setting enabled=false will override this value 
     deprecations: true                    # If true, reports E_USER_DEPRECATED to Elastic APM (default: true)
     warnings: true                        # If true, reports E_WARNING/E_USER_WARNING to Elastic APM (default: true)
-    report_silenced_errors: false         # If true, also reports warnings/deprecations silenced with @ or excluded by error_reporting() (default: false)
+    report_silenced_errors: false         # If true, also reports warnings silenced with @ or excluded by error_reporting() (default: false); deprecations are always reported
     track_memory_usage: false             # If true, records peak memory usage
     memory_usage_label: memory_usage      # The name of the custom label to write memory usage to
     custom_labels:                        # Labels added to every transaction
@@ -80,7 +80,7 @@ elastic_apm:
     exceptions:
        enabled: true                      # If true, sends exceptions (default: true)
        unwrap_exceptions: false           # If true, also sends the previous/nested exceptions (default: false)
-       capture_min_status_code: 500       # Min HTTP status an HttpException must carry to be reported; lower to 400 to capture 4xx signal (default: 500). Request exceptions (e.g. SuspiciousOperationException) count as 400
+       capture_min_status_code: 500       # Min HTTP status an HttpException must carry to be reported; lower to 400 to capture 4xx signal (default: 500). Request exceptions (e.g. SuspiciousOperationException) count as 400; on the main request HttpKernel already converts them to BadRequestHttpException
        ignored_exceptions:                # List of exception classes to ignore (subclasses are ignored too)
           - An\Ignored\Exception
     http:
@@ -106,8 +106,12 @@ listeners are respected.
 
 The warning and deprecation listeners install a PHP error handler at kernel boot and remove it at shutdown.
 
-- Errors silenced with `@` or excluded by `error_reporting()` are **not** reported unless
+- Warnings silenced with `@` or excluded by `error_reporting()` are **not** reported unless
   `report_silenced_errors: true` is set.
+- Deprecations are always reported, silenced or not, like Symfony's own ErrorHandler does: `trigger_deprecation()`
+  and doctrine/deprecations emit every deprecation with `@`.
+- Unregistering while another error handler sits on top of the bundle's leaves the bundle's handler in place as a
+  pure pass-through (nothing is reported, the chain is kept) instead of popping the other handler.
 - The handler always delegates to the previously registered error handler and returns its result unchanged (or
   `false` when there is none), so PHP's own error logging and `error_get_last()` behave as if the bundle were not
   installed.
@@ -148,7 +152,7 @@ This bundle comes with a few services that may be suitable for you.
 | `ElasticApmBundle\Interactor\AdaptiveInteractor` | This is the default interactor. It will check once per request if the agent extension is installed or not. | 
 | `ElasticApmBundle\Interactor\ElasticApmInteractor` | This interactor communicates with the Elastic APM agent. It is the one decorator that actually does some work. | 
 | `ElasticApmBundle\Interactor\BlackholeInteractor` | This interactor silently drops any calls. | 
-| `auto` | This value will check, when you build your container, if the Elastic APM PHP extension is installed and the agent is enabled (with `ELASTIC_APM_ENABLED=false` the agent API is not loaded, so the blackhole interactor is used). | 
+| `auto` | Same as `AdaptiveInteractor`: the agent is detected at runtime (extension loaded **and** agent enabled), not when the container is built, so a container warmed up with `ELASTIC_APM_ENABLED=false` (e.g. during a Docker build) still reports once the agent is enabled. | 
 
 Note that if you set `elastic_apm.enabled: false` you will always use the `BlackholeInteractor` no matter what value 
 used for `elastic_apm.interactor`.

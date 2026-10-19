@@ -15,7 +15,8 @@
         "symfony/http-kernel": "^6.4|^7.0|^8.0"
     },
     "suggest": {
-        "ext-elastic_apm": "To send data to Elastic APM. Without it the bundle falls back to a no-op interactor."
+        "ext-elastic_apm": "To send data to Elastic APM. Without it the bundle falls back to a no-op interactor.",
+        "symfony/messenger": "To propagate distributed tracing through Symfony Messenger and trace consumed messages as transactions."
     },
     "require-dev": {
         "matthiasnoback/symfony-dependency-injection-test": "^6.2",
@@ -24,7 +25,11 @@
         "phpstan/phpstan": "^2.1",
         "phpstan/phpstan-phpunit": "^2.0",
         "rector/rector": "^2.2",
+        "symfony/messenger": "^6.4|^7.0|^8.0",
         "symfony/phpunit-bridge": "^8.0.0",
+        "symfony/property-access": "^6.4|^7.0|^8.0",
+        "symfony/property-info": "^6.4|^7.0|^8.0",
+        "symfony/serializer": "^6.4|^7.0|^8.0",
         "symplify/easy-coding-standard": "^13.0",
         "vimeo/psalm": "^6.13"
     },

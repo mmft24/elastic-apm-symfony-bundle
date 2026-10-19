@@ -93,6 +93,8 @@ elastic_apm:
         enabled: true                     # Defaults to true when symfony/messenger is installed, false otherwise
         transaction_type: message         # Type of the transaction started for each consumed message
         ignored_retryable_exceptions: []  # Exception classes/interfaces not reported while the message will be retried
+    log_correlation:
+        enabled: false                    # If true, adds trace.id/transaction.id/span.id to Monolog records (see below)
 ```
 
 > **Note:** sensitive command options/arguments (those whose name contains `password`, `token`, `secret`,
@@ -190,6 +192,41 @@ framework:
 
 Set `elastic_apm.messenger.enabled: false` to turn the whole feature off. Without the `elastic_apm` extension
 nothing is stamped and no transaction is started.
+
+## Log ↔ trace correlation
+
+Opt in to have every Monolog record carry the ids of the APM transaction it was written in, so Kibana can jump
+from a log line to its trace (and back). Requires `monolog/monolog` ^3 and MonologBundle.
+
+```yaml
+elastic_apm:
+    log_correlation:
+        enabled: true                     # Default: false
+        channels: []                      # Only these Monolog channels (default: all channels)
+        handlers: []                      # Only these Monolog handlers (combinable with channels)
+        field_names:                      # Keys written to the record's "extra" (defaults follow ECS)
+            trace_id: trace.id
+            transaction_id: transaction.id
+            span_id: span.id
+```
+
+The `ElasticApmBundle\Monolog\TraceContextProcessor` (tagged `monolog.processor`) then adds to `$record->extra`:
+
+| Field            | When                                    |
+| ---------------- | --------------------------------------- |
+| `trace.id`       | a transaction is being recorded         |
+| `transaction.id` | a transaction is being recorded         |
+| `span.id`        | additionally, a span is currently active |
+
+Records written outside a transaction (or with the agent missing or disabled) are left untouched, and the processor
+never throws. `channels` and `handlers` can be combined; one `monolog.processor` tag is added per entry.
+
+Notes:
+- This is unrelated to the `logging` option, which logs the bundle's own calls to the agent.
+- Monolog 2 (array records) is not supported. Enabling `log_correlation` without Monolog 3 fails at container
+  compile time with an explicit message; leaving it disabled works with any (or no) Monolog version.
+- The fields land in `extra`; make sure your formatter/ingest pipeline maps them to the top-level ECS
+  `trace.id`/`transaction.id`/`span.id` fields Kibana uses for correlation, or rename them via `field_names`.
 
 ## Troubleshooting
 

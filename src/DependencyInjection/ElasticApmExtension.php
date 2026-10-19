@@ -23,10 +23,12 @@ use ElasticApmBundle\Interactor\LoggingInteractorDecorator;
 use ElasticApmBundle\Listener\CommandListener;
 use ElasticApmBundle\Listener\ExceptionListener;
 use ElasticApmBundle\Messenger\WorkerTransactionListener;
+use ElasticApmBundle\Monolog\TraceContextProcessor;
 use ElasticApmBundle\TransactionNamingStrategy\ControllerNamingStrategy;
 use ElasticApmBundle\TransactionNamingStrategy\RouteNamingStrategy;
 use ElasticApmBundle\TransactionNamingStrategy\TransactionNamingStrategyInterface;
 use ElasticApmBundle\TransactionNamingStrategy\UriNamingStrategy;
+use Monolog\LogRecord;
 use Symfony\Component\Config\FileLocator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Extension\Extension;
@@ -41,6 +43,13 @@ use Symfony\Component\Messenger\MessageBusInterface;
  */
 final class ElasticApmExtension extends Extension
 {
+    /**
+     * @param (\Closure(): bool)|null $isMonologAvailable internal, lets tests simulate a missing Monolog
+     */
+    public function __construct(
+        private readonly ?\Closure $isMonologAvailable = null,
+    ) {}
+
     #[\Override]
     public function load(array $configs, ContainerBuilder $container): void
     {
@@ -133,6 +142,55 @@ final class ElasticApmExtension extends Extension
                         '$ignoredRetryableExceptions' => $config['messenger']['ignored_retryable_exceptions'],
                     ],
                 );
+        }
+
+        if ($config['log_correlation']['enabled']) {
+            $this->loadLogCorrelation((array) $config['log_correlation'], $loader, $container);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     */
+    private function loadLogCorrelation(array $config, Loader\PhpFileLoader $loader, ContainerBuilder $container): void
+    {
+        $isMonologAvailable = $this->isMonologAvailable ?? static fn(): bool => \class_exists(LogRecord::class);
+
+        if (!$isMonologAvailable()) {
+            throw new \LogicException(
+                'Log correlation cannot be enabled as Monolog 3 is not installed. Try running "composer require monolog/monolog:^3" or set "elastic_apm.log_correlation.enabled" to false.',
+            );
+        }
+
+        $loader->load('log_correlation.php');
+
+        /** @var array{trace_id: string, transaction_id: string, span_id: string} $fieldNames */
+        $fieldNames = $config['field_names'];
+        $definition = $container->getDefinition(TraceContextProcessor::class)
+            ->setArguments([
+                '$traceIdField' => $fieldNames['trace_id'],
+                '$transactionIdField' => $fieldNames['transaction_id'],
+                '$spanIdField' => $fieldNames['span_id'],
+            ]);
+
+        /** @var list<string> $channels */
+        $channels = $config['channels'];
+        /** @var list<string> $handlers */
+        $handlers = $config['handlers'];
+
+        if ([] === $channels && [] === $handlers) {
+            $definition->addTag('monolog.processor');
+
+            return;
+        }
+
+        // MonologBundle honours either "channel" or "handler" on a single tag, so each restriction gets its own tag.
+        foreach ($channels as $channel) {
+            $definition->addTag('monolog.processor', ['channel' => $channel]);
+        }
+
+        foreach ($handlers as $handler) {
+            $definition->addTag('monolog.processor', ['handler' => $handler]);
         }
     }
 

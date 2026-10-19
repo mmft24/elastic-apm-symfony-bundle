@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by a worker becomes its own transaction in that trace, with result/outcome, handler exceptions unwrapped from
   `HandlerFailedException`, and `ignored_retryable_exceptions` to skip expected failures that will be retried. An
   `elastic_apm.messenger.middleware` middleware covers buses that do not dispatch `SendMessageToTransportsEvent`.
+- Opt-in log ↔ trace correlation (`elastic_apm.log_correlation`): a Monolog 3 processor adds the
+  current `trace.id`, `transaction.id` and `span.id` to every record's `extra` so Kibana can link logs
+  to traces. Disabled by default; `monolog/monolog` ^3 is suggested, not required.
 
 ### Changed
 

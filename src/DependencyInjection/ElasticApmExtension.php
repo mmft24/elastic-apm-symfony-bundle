@@ -17,7 +17,6 @@ namespace ElasticApmBundle\DependencyInjection;
 use ElasticApmBundle\Interactor\AdaptiveInteractor;
 use ElasticApmBundle\Interactor\BlackholeInteractor;
 use ElasticApmBundle\Interactor\Config;
-use ElasticApmBundle\Interactor\ElasticApmInteractor;
 use ElasticApmBundle\Interactor\ElasticApmInteractorInterface;
 use ElasticApmBundle\Interactor\LoggingInteractorDecorator;
 use ElasticApmBundle\Listener\CommandListener;
@@ -199,11 +198,10 @@ final class ElasticApmExtension extends Extension
         $interactor = (string) $config['interactor'];
 
         if ('auto' === $interactor) {
-            // The extension alone is not enough: with ELASTIC_APM_ENABLED=false it is loaded but the agent API
-            // (Elastic\Apm\ElasticApm) never is, and ElasticApmInteractor would fatal on its first call.
-            return \extension_loaded('elastic_apm') && \class_exists(\Elastic\Apm\ElasticApm::class)
-                ? ElasticApmInteractor::class
-                : BlackholeInteractor::class;
+            // Detect the agent at runtime, not here: a container warmed up where the agent is disabled (typically
+            // a Docker build with ELASTIC_APM_ENABLED=false) would otherwise bake in the blackhole interactor and
+            // report nothing in production.
+            return AdaptiveInteractor::class;
         }
 
         return $interactor;

@@ -95,12 +95,12 @@ final class MessengerExtensionTest extends AbstractExtensionTestCase
 
         $subscribers = new \ArrayObject();
         $container->addCompilerPass(
-            new class($subscribers) implements CompilerPassInterface {
+            new readonly class($subscribers) implements CompilerPassInterface {
                 /**
                  * @param \ArrayObject<int, string> $subscribers
                  */
                 public function __construct(
-                    private readonly \ArrayObject $subscribers,
+                    private \ArrayObject $subscribers,
                 ) {}
 
                 #[\Override]
@@ -113,7 +113,7 @@ final class MessengerExtensionTest extends AbstractExtensionTestCase
             },
             PassConfig::TYPE_BEFORE_REMOVING,
         );
-        $container->compile();
+        $container->compile(true);
 
         $this->assertInstanceOf(TracingMiddleware::class, $container->get('test.middleware'));
         $this->assertContains(PropagateTracingListener::class, $subscribers->getArrayCopy());

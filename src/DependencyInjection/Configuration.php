@@ -20,13 +20,13 @@ use Symfony\Component\Config\Definition\ConfigurationInterface;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Messenger\MessageBusInterface;
 
-final class Configuration implements ConfigurationInterface
+final readonly class Configuration implements ConfigurationInterface
 {
     /**
      * @param bool|null $messengerAvailable whether symfony/messenger is installed; null detects it
      */
     public function __construct(
-        private readonly ?bool $messengerAvailable = null,
+        private ?bool $messengerAvailable = null,
     ) {}
 
     #[\Override]

@@ -78,6 +78,6 @@ final class TracingStamperTest extends TestCase
 
     private function createStamper(?\Elastic\Apm\TransactionInterface $current): TracingStamper
     {
-        return new TracingStamper(new RecordingInteractor(static fn() => null, $current));
+        return new TracingStamper(new RecordingInteractor(static fn(): null => null, $current));
     }
 }

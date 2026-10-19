@@ -53,6 +53,6 @@ final class PropagateTracingListenerTest extends TestCase
 
     private function createListener(?\Elastic\Apm\TransactionInterface $current): PropagateTracingListener
     {
-        return new PropagateTracingListener(new TracingStamper(new RecordingInteractor(static fn() => null, $current)));
+        return new PropagateTracingListener(new TracingStamper(new RecordingInteractor(static fn(): null => null, $current)));
     }
 }

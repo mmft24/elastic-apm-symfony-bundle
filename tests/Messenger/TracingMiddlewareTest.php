@@ -66,7 +66,7 @@ final class TracingMiddlewareTest extends TestCase
     private function handle(Envelope $envelope, ?TransactionInterface $current): Envelope
     {
         $middleware = new TracingMiddleware(
-            new TracingStamper(new RecordingInteractor(static fn() => null, $current)),
+            new TracingStamper(new RecordingInteractor(static fn(): null => null, $current)),
         );
 
         $next = new class implements MiddlewareInterface {

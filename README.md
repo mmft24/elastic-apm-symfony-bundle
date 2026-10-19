@@ -90,6 +90,10 @@ elastic_apm:
     commands: 
         enabled: true                     # If true, enhances CLI commands with options and arguments (default: true)
         explicitly_collect_exceptions: true # Turn this off if you are experiencing multiple reports of exceptions.
+    messenger:
+        enabled: true                     # Defaults to true when symfony/messenger is installed, false otherwise
+        transaction_type: message         # Type of the transaction started for each consumed message
+        ignored_retryable_exceptions: []  # Exception classes/interfaces not reported while the message will be retried
     log_correlation:
         enabled: false                    # If true, adds trace.id/transaction.id/span.id to Monolog records (see below)
 ```
@@ -173,6 +177,48 @@ monolog:
         type: service
         id: 'Monolog\Handler\ElasticsearchHandler'
 ```
+
+## Symfony Messenger
+
+When `symfony/messenger` is installed, the bundle traces messages across processes:
+
+- **Producer side:** every message sent to a transport gets an `ElasticApmBundle\Messenger\ApmTracingStamp` carrying
+  the W3C `traceparent`/`tracestate` headers of the current transaction. This hooks into Messenger's
+  `SendMessageToTransportsEvent`, so it works for every bus without any bus configuration. The stamp survives both
+  the default PHP serializer and Symfony's `Serializer` transport serializer.
+- **Worker side:** `messenger:consume` no longer reports one endless transaction for the whole worker process. The
+  transaction the agent started for the process is discarded and each consumed message gets its own transaction,
+  named `messenger:consume <transport> <MessageClass>`, that continues the producer's trace. It ends with result
+  `MSG 2xx`/outcome `success` when handled, or `MSG 5xx`/outcome `failure` when it failed, with the configured
+  custom labels/context and memory usage label attached. No transaction is carried over from one message to the
+  next, including for skipped or rejected messages.
+- **Errors:** the exceptions thrown by the handlers are reported, not Messenger's `HandlerFailedException` wrapper
+  (`exceptions.unwrap_exceptions` still decides whether their previous exceptions are reported too). Failures you
+  expect to recover on retry can be kept out of APM while the message will still be retried; the final failed
+  attempt is always reported:
+
+```yaml
+elastic_apm:
+    messenger:
+        ignored_retryable_exceptions:
+            - App\Messenger\ExpectedRetryExceptionInterface   # instanceof check: subclasses/implementations match
+```
+
+Buses whose `SendMessageMiddleware` has no event dispatcher (e.g. buses built by hand rather than by FrameworkBundle)
+do not dispatch `SendMessageToTransportsEvent`. Add the `elastic_apm.messenger.middleware` middleware to them
+instead; it is idempotent, so adding it to a FrameworkBundle bus as well is harmless:
+
+```yaml
+framework:
+    messenger:
+        buses:
+            messenger.bus.default:
+                middleware:
+                    - elastic_apm.messenger.middleware
+```
+
+Set `elastic_apm.messenger.enabled: false` to turn the whole feature off. Without the `elastic_apm` extension
+nothing is stamped and no transaction is started.
 
 ## Log ↔ trace correlation
 

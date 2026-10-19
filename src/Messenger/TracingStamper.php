@@ -1,0 +1,63 @@
+<?php
+
+declare(strict_types=1);
+
+/*
+ * This file is part of the Elastic APM Symfony Bundle.
+ *
+ * (c) mmft24
+ * (c) Ekino - Thomas Rabaix <thomas.rabaix@ekino.com>
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+namespace ElasticApmBundle\Messenger;
+
+use ElasticApmBundle\Interactor\ElasticApmInteractorInterface;
+use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Stamp\ConsumedByWorkerStamp;
+use Symfony\Component\Messenger\Stamp\ReceivedStamp;
+
+/**
+ * Adds an {@see ApmTracingStamp} carrying the current transaction's distributed tracing headers to outgoing envelopes.
+ */
+final readonly class TracingStamper
+{
+    public function __construct(
+        private ElasticApmInteractorInterface $interactor,
+    ) {}
+
+    public function stamp(Envelope $envelope): Envelope
+    {
+        // An existing stamp links the message to the trace that first produced it, which must survive re-sends;
+        // received envelopes are being consumed, not produced, so they have nothing to propagate.
+        if (
+            null !== $envelope->last(ApmTracingStamp::class)
+            || null !== $envelope->last(ConsumedByWorkerStamp::class)
+            || null !== $envelope->last(ReceivedStamp::class)
+        ) {
+            return $envelope;
+        }
+
+        $transaction = $this->interactor->getCurrentTransaction();
+
+        if (null === $transaction) {
+            return $envelope;
+        }
+
+        $headers = [];
+        $transaction->injectDistributedTracingHeaders(
+            static function (string $name, string $value) use (&$headers): void {
+                $headers[$name] = $value;
+            },
+        );
+
+        // A noop transaction (agent disabled or not recording) injects nothing.
+        if ([] === $headers) {
+            return $envelope;
+        }
+
+        return $envelope->with(new ApmTracingStamp($headers));
+    }
+}

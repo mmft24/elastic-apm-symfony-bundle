@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ElasticApmBundle\Tests\Messenger;
 
+use Elastic\Apm\TransactionInterface;
 use ElasticApmBundle\Interactor\BlackholeInteractor;
 use ElasticApmBundle\Messenger\ApmTracingStamp;
 use ElasticApmBundle\Messenger\WorkerTransactionListener;
@@ -147,7 +148,10 @@ final class WorkerTransactionListenerTest extends TestCase
     public function testNoopMessageTransactionIsNotTrackedNorEnded(): void
     {
         $noop = $this->createTransactionSpy([], noop: true);
-        $interactor = new RecordingInteractor(static fn() => $noop->transaction, $this->processTransaction->transaction);
+        $interactor = new RecordingInteractor(
+            static fn(): TransactionInterface => $noop->transaction,
+            $this->processTransaction->transaction,
+        );
         $listener = new WorkerTransactionListener($interactor);
         $envelope = $this->envelope();
 

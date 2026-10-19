@@ -47,11 +47,11 @@ final class RealAgentMessengerTracingTest extends TestCase
     private const string UPSTREAM_TRACE_ID = '0af7651916cd43dd8448eb211c80319c';
 
     private const string UPSTREAM_PARENT_ID = 'b7ad6b7169203331';
-
     private RecordingEventSink $sink;
     private ElasticApmInteractor $interactor;
     private EventDispatcher $dispatcher;
     private InMemoryTransport $transport;
+    private ?MessageBus $bus = null;
 
     /** @var list<string> id of the current transaction while each message was handled */
     private array $handledIn = [];
@@ -175,21 +175,19 @@ final class RealAgentMessengerTracingTest extends TestCase
             new ServiceLocator([self::TRANSPORT => fn(): InMemoryTransport => $this->transport]),
         );
 
-        $bus = null;
-        $handle = function (TestMessage $message) use (&$bus, $handler): void {
+        $handle = function (TestMessage $message) use ($handler): void {
             $this->handledIn[] = ElasticApm::getCurrentTransaction()->getId();
 
-            if (null !== $handler && $bus instanceof MessageBus) {
-                $handler($message, $bus);
+            if (null !== $handler) {
+                \assert(null !== $this->bus);
+                $handler($message, $this->bus);
             }
         };
 
-        $bus = new MessageBus([
+        return $this->bus = new MessageBus([
             new SendMessageMiddleware($senders, $this->dispatcher),
             new HandleMessageMiddleware(new HandlersLocator([TestMessage::class => [$handle]])),
         ]);
-
-        return $bus;
     }
 
     private function runWorker(MessageBus $bus, int $messages): void

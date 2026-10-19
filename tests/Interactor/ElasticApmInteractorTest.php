@@ -213,7 +213,11 @@ final class ElasticApmInteractorTest extends TestCase
     {
         $this->interactor->endCurrentTransaction();
 
-        $this->interactor->beginCurrentTransactionFromHeaders('consumer', 'message', ['traceparent' => '00-nonsense-01']);
+        $this->interactor->beginCurrentTransactionFromHeaders(
+            'consumer',
+            'message',
+            ['traceparent' => '00-nonsense-01'],
+        );
 
         $recorded = $this->endTransaction();
         $this->assertSame('consumer', $recorded['name']);

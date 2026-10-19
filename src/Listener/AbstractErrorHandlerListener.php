@@ -25,8 +25,10 @@ use Symfony\Contracts\Service\ResetInterface;
  * class deduplicates events so a hot code path that emits the same error over and over does not flood APM with
  * identical entries.
  *
- * Errors silenced with the `@` operator or excluded by error_reporting() are not reported by default: PHP still
+ * Warnings silenced with the `@` operator or excluded by error_reporting() are not reported by default: PHP still
  * invokes user error handlers for them, so without this check every `@`-guarded call would end up in APM.
+ * Deprecations are exempt, like in Symfony's ErrorHandler: trigger_deprecation() and doctrine/deprecations always
+ * emit them with `@`, so honouring the silencing would drop virtually all of them.
  *
  * The dedup cache is scoped to a single transaction: it implements {@see ResetInterface} so that Symfony's
  * services resetter clears it between HTTP requests (including worker runtimes such as RoadRunner or FrankenPHP)
@@ -45,6 +47,11 @@ abstract class AbstractErrorHandlerListener implements ResetInterface
     private ?\Closure $previousHandler = null;
 
     /**
+     * The closure installed with set_error_handler(), kept while it is still part of PHP's handler stack.
+     */
+    private ?\Closure $installedHandler = null;
+
+    /**
      * @var array<string, true>
      */
     private array $seen = [];
@@ -54,7 +61,7 @@ abstract class AbstractErrorHandlerListener implements ResetInterface
     ) {}
 
     /**
-     * Also report errors silenced with `@` or excluded by error_reporting().
+     * Also report warnings silenced with `@` or excluded by error_reporting(). Deprecations are always reported.
      */
     public function setReportSilencedErrors(bool $reportSilencedErrors): void
     {
@@ -68,18 +75,41 @@ abstract class AbstractErrorHandlerListener implements ResetInterface
         }
         $this->isRegistered = true;
 
-        $previousHandler = \set_error_handler($this->handleError(...));
+        // Still in the stack after an unregister() that could not pop it: reactivate instead of stacking a copy.
+        if (null !== $this->installedHandler) {
+            return;
+        }
+
+        $this->installedHandler = $this->handleError(...);
+        $previousHandler = \set_error_handler($this->installedHandler);
         $this->previousHandler = null === $previousHandler ? null : \Closure::fromCallable($previousHandler);
     }
 
+    /**
+     * Stops reporting and removes the handler from PHP's stack when it is on top.
+     *
+     * restore_error_handler() always pops the top handler, so when another handler was registered after this one
+     * popping would remove that handler instead. The handler then stays installed as a pure pass-through to the
+     * previous handler, keeping the chain intact; a later unregister() removes it once it is on top again.
+     */
     public function unregister(): void
     {
-        if (!$this->isRegistered) {
+        $this->isRegistered = false;
+
+        if (null === $this->installedHandler) {
             return;
         }
-        $this->isRegistered = false;
-        $this->previousHandler = null;
+
+        $top = \set_error_handler(static fn(): bool => false);
         \restore_error_handler();
+
+        if ($top !== $this->installedHandler) {
+            return;
+        }
+
+        \restore_error_handler();
+        $this->installedHandler = null;
+        $this->previousHandler = null;
     }
 
     /**
@@ -92,7 +122,12 @@ abstract class AbstractErrorHandlerListener implements ResetInterface
      */
     public function handleError(int $type, string $message, string $file = '', int $line = 0): mixed
     {
-        if ($this->shouldReport($type, $message, $file, $line) && !$this->isDuplicate($type, $message, $file, $line)) {
+        if ($this->isRegistered && $this->shouldReport($type, $message, $file, $line) && !$this->isDuplicate(
+            $type,
+            $message,
+            $file,
+            $line
+        )) {
             $this->interactor->addContextFromConfig();
             $this->interactor->noticeThrowable($this->createThrowable($type, $message, $file, $line));
         }
@@ -116,7 +151,11 @@ abstract class AbstractErrorHandlerListener implements ResetInterface
      */
     protected function shouldReport(int $type, string $message, string $file, int $line): bool
     {
-        return $this->handles($type) && ($this->reportSilencedErrors || !self::isSilenced($type));
+        if (!$this->handles($type)) {
+            return false;
+        }
+
+        return $this->reportSilencedErrors || self::isDeprecation($type) || !self::isSilenced($type);
     }
 
     /**
@@ -126,6 +165,14 @@ abstract class AbstractErrorHandlerListener implements ResetInterface
     protected static function isSilenced(int $type): bool
     {
         return 0 === (\error_reporting() & $type);
+    }
+
+    /**
+     * Symfony's ErrorHandler never treats deprecations as silenced, neither by `@` nor by error_reporting().
+     */
+    protected static function isDeprecation(int $type): bool
+    {
+        return 0 !== ($type & (\E_DEPRECATED | \E_USER_DEPRECATED));
     }
 
     /**

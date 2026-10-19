@@ -36,6 +36,13 @@ final class TestController
         throw new SuspiciousOperationException('Untrusted Host');
     }
 
+    public function deprecated(): Response
+    {
+        \trigger_deprecation('acme/package', '1.2', 'Calling "%s" is deprecated.', 'deprecated()');
+
+        return new Response('deprecated');
+    }
+
     public function ignored(): Response
     {
         throw new IgnoredException('Expected and ignored');

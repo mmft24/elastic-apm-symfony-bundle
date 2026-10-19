@@ -211,8 +211,11 @@ final class ElasticApmExtension extends Extension
         $interactor = (string) $config['interactor'];
 
         if ('auto' === $interactor) {
-            // Check if the extension is loaded or not
-            return \extension_loaded('elastic_apm') ? ElasticApmInteractor::class : BlackholeInteractor::class;
+            // The extension alone is not enough: with ELASTIC_APM_ENABLED=false it is loaded but the agent API
+            // (Elastic\Apm\ElasticApm) never is, and ElasticApmInteractor would fatal on its first call.
+            return \extension_loaded('elastic_apm') && \class_exists(\Elastic\Apm\ElasticApm::class)
+                ? ElasticApmInteractor::class
+                : BlackholeInteractor::class;
         }
 
         return $interactor;

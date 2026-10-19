@@ -4,247 +4,317 @@ declare(strict_types=1);
 
 namespace ElasticApmBundle\Tests\Interactor;
 
+use Elastic\Apm\DistributedTracingData;
+use Elastic\Apm\ElasticApm;
 use ElasticApmBundle\Interactor\Config;
 use ElasticApmBundle\Interactor\ElasticApmInteractor;
+use ElasticApmBundle\Tests\Support\RealAgent;
+use ElasticApmBundle\Tests\Support\RecordingEventSink;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 
+/**
+ * Drives the real agent (not a mock) and asserts on the events it would ship to the APM server.
+ *
+ * Requires a usable agent: the elastic_apm extension loaded with ELASTIC_APM_ENABLED not set to false (the test
+ * Docker image enables it with ELASTIC_APM_DISABLE_SEND=true, so nothing leaves the container).
+ */
 #[CoversClass(ElasticApmInteractor::class)]
-#[RequiresPhpExtension('elastic_apm')]
 final class ElasticApmInteractorTest extends TestCase
 {
-    private Config $config;
+    private RecordingEventSink $sink;
     private ElasticApmInteractor $interactor;
 
     protected function setUp(): void
     {
-        if (!\extension_loaded('elastic_apm') || !\class_exists(\Elastic\Apm\ElasticApm::class)) {
-            $this->markTestSkipped('Elastic APM extension is not loaded');
+        if (!RealAgent::isUsable()) {
+            $this->markTestSkipped(RealAgent::skipReason());
         }
 
-        $this->config = new Config(
-            customLabels: ['custom_label' => 'value'],
-            customContext: ['custom_context' => 'ctx_value'],
-            shouldCollectMemoryUsage: true,
-            memoryUsageLabelName: 'memory_peak',
-            shouldExplicitlyCollectCommandExceptions: false,
-            shouldUnwrapExceptions: true,
-        );
-        $this->interactor = new ElasticApmInteractor($this->config);
+        $this->sink = RealAgent::record();
+        $this->interactor = new ElasticApmInteractor($this->config());
+
+        ElasticApm::beginCurrentTransaction('initial', 'request');
+    }
+
+    protected function tearDown(): void
+    {
+        if (RealAgent::isUsable()) {
+            RealAgent::restore();
+        }
     }
 
     public function testSetTransactionName(): void
     {
-        $result = $this->interactor->setTransactionName('test-transaction');
-        $this->assertTrue($result);
+        $this->assertTrue($this->interactor->setTransactionName('renamed'));
+
+        $this->assertSame('renamed', $this->endTransaction()['name']);
     }
 
-    public function testAddLabel(): void
+    public function testAddLabelSupportsScalars(): void
     {
-        $result = $this->interactor->addLabel('test-key', 'test-value');
-        $this->assertTrue($result);
-    }
+        $this->assertTrue($this->interactor->addLabel('string', 'value'));
+        $this->assertTrue($this->interactor->addLabel('int', 42));
+        $this->assertTrue($this->interactor->addLabel('float', 3.5));
+        $this->assertTrue($this->interactor->addLabel('bool', true));
+        $this->assertTrue($this->interactor->addLabel('null', null));
 
-    public function testAddLabelTruncatesLongKeys(): void
-    {
-        $longKey = \str_repeat('a', 2000);
-        $result = $this->interactor->addLabel($longKey, 'value');
-        $this->assertTrue($result);
-    }
-
-    public function testAddLabelTruncatesLongStringValues(): void
-    {
-        $longValue = \str_repeat('b', 2000);
-        $result = $this->interactor->addLabel('key', $longValue);
-        $this->assertTrue($result);
-    }
-
-    public function testAddLabelWithNonStringValue(): void
-    {
-        $result = $this->interactor->addLabel('int-value', 42);
-        $this->assertTrue($result);
-
-        $result = $this->interactor->addLabel('float-value', 3.14);
-        $this->assertTrue($result);
-
-        $result = $this->interactor->addLabel('bool-value', true);
-        $this->assertTrue($result);
-    }
-
-    public function testAddCustomContext(): void
-    {
-        $result = $this->interactor->addCustomContext('context-key', 'context-value');
-        $this->assertTrue($result);
-    }
-
-    public function testNoticeThrowable(): void
-    {
-        $exception = new \RuntimeException('Test exception');
-        $this->interactor->noticeThrowable($exception);
-
-        // If no exception is thrown, the test passes
-        $this->addToAssertionCount(1);
-    }
-
-    public function testNoticeThrowableWithPrevious(): void
-    {
-        $previous = new \RuntimeException('Previous exception');
-        $exception = new \RuntimeException('Test exception', 0, $previous);
-
-        $this->interactor->noticeThrowable($exception);
-
-        // If no exception is thrown, the test passes
-        $this->addToAssertionCount(1);
-    }
-
-    public function testNoticeThrowableWithoutUnwrapping(): void
-    {
-        $config = new Config(
-            customLabels: [],
-            customContext: [],
-            shouldCollectMemoryUsage: false,
-            memoryUsageLabelName: 'memory',
-            shouldExplicitlyCollectCommandExceptions: false,
-            shouldUnwrapExceptions: false,
+        $this->assertSame(
+            ['string' => 'value', 'int' => 42, 'float' => 3.5, 'bool' => true, 'null' => null],
+            $this->labels(),
         );
-        $interactor = new ElasticApmInteractor($config);
+    }
 
-        $previous = new \RuntimeException('Previous exception');
-        $exception = new \RuntimeException('Test exception', 0, $previous);
+    public function testAddLabelTruncatesLongKeysAndStringValuesTo1024Bytes(): void
+    {
+        $this->interactor->addLabel(\str_repeat('k', 2000), \str_repeat('v', 2000));
 
-        $interactor->noticeThrowable($exception);
+        $labels = $this->labels();
+        $this->assertSame([\str_repeat('k', 1024) => \str_repeat('v', 1024)], $labels);
+    }
 
-        // If no exception is thrown, the test passes
-        $this->addToAssertionCount(1);
+    public function testAddLabelTruncationNeverSplitsAMultibyteCharacter(): void
+    {
+        // 'ä' is two bytes: 1024 bytes cannot end in the middle of one when truncated with mb_strcut().
+        $this->interactor->addLabel('key', 'x'.\str_repeat('ä', 1000));
+
+        $value = $this->labels()['key'];
+        $this->assertIsString($value);
+        $this->assertSame(1023, \strlen($value));
+        $this->assertTrue(\mb_check_encoding($value, 'UTF-8'));
+    }
+
+    public function testAddCustomContextIsStoredAsLabel(): void
+    {
+        $this->assertTrue($this->interactor->addCustomContext('context-key', 'context-value'));
+
+        $this->assertSame(['context-key' => 'context-value'], $this->labels());
+    }
+
+    public function testNoticeThrowableUnwrapsTheWholeChainWhenEnabled(): void
+    {
+        $root = new \LogicException('root');
+        $middle = new \InvalidArgumentException('middle', 0, $root);
+        $exception = new \RuntimeException('top', 0, $middle);
+
+        $this->interactor->noticeThrowable($exception);
+        $this->endTransaction();
+
+        $this->assertSame(['top', 'middle', 'root'], $this->sink->errorMessages());
+        $this->assertSame('RuntimeException', $this->sink->errors[0]['exception']['type']);
+    }
+
+    public function testNoticeThrowableReportsOnlyTheThrowableWithoutUnwrapping(): void
+    {
+        $interactor = new ElasticApmInteractor($this->config(unwrapExceptions: false));
+
+        $interactor->noticeThrowable(new \RuntimeException('top', 0, new \LogicException('previous')));
+        $this->endTransaction();
+
+        $this->assertSame(['top'], $this->sink->errorMessages());
+    }
+
+    public function testNoticedErrorIsAttachedToTheCurrentTransaction(): void
+    {
+        $this->interactor->noticeThrowable(new \RuntimeException('boom'));
+        $transaction = $this->endTransaction();
+
+        $this->assertSame($transaction['id'], $this->sink->errors[0]['transaction_id']);
+    }
+
+    public function testGetCurrentTransactionReturnsTheAgentTransaction(): void
+    {
+        $this->assertSame(ElasticApm::getCurrentTransaction(), $this->interactor->getCurrentTransaction());
+        $this->assertFalse($this->interactor->getCurrentTransaction()->isNoop());
     }
 
     public function testEndCurrentTransaction(): void
     {
-        $this->interactor->beginCurrentTransaction('test', 'request');
-        $result = $this->interactor->endCurrentTransaction();
-        $this->assertTrue($result);
+        $this->assertTrue($this->interactor->endCurrentTransaction());
+
+        $this->assertCount(1, $this->sink->transactions);
+        $this->assertSame('initial', $this->sink->transactions[0]['name']);
+        $this->assertTrue(ElasticApm::getCurrentTransaction()->isNoop());
     }
 
-    public function testEndCurrentTransactionWithDuration(): void
+    public function testEndCurrentTransactionWithExplicitDuration(): void
     {
-        $this->interactor->beginCurrentTransaction('test', 'request');
-        $result = $this->interactor->endCurrentTransaction(1.5);
-        $this->assertTrue($result);
+        $this->assertTrue($this->interactor->endCurrentTransaction(1.5));
+
+        $this->assertEqualsWithDelta(1.5, $this->sink->transactions[0]['duration'], 0.001);
     }
 
-    public function testEndCurrentSpan(): void
+    public function testBeginTransactionDoesNotReplaceTheCurrentOne(): void
     {
-        $this->interactor->beginCurrentTransaction('test', 'request');
-        $this->interactor->beginCurrentSpan('test-span', 'db');
-        $result = $this->interactor->endCurrentSpan();
-        $this->assertTrue($result);
+        $current = ElasticApm::getCurrentTransaction();
+        $transaction = $this->interactor->beginTransaction('background', 'job');
+
+        $this->assertSame($current, ElasticApm::getCurrentTransaction());
+
+        $transaction->end();
+        $this->assertSame('background', $this->sink->transactions[0]['name']);
+        $this->assertSame('job', $this->sink->transactions[0]['type']);
+        $this->assertSame('initial', $this->endTransaction()['name']);
     }
 
-    public function testEndCurrentSpanWithDuration(): void
+    public function testBeginCurrentTransactionBecomesCurrent(): void
     {
-        $this->interactor->beginCurrentTransaction('test', 'request');
-        $this->interactor->beginCurrentSpan('test-span', 'db');
-        $result = $this->interactor->endCurrentSpan(0.5);
-        $this->assertTrue($result);
+        $this->interactor->endCurrentTransaction();
+
+        $transaction = $this->interactor->beginCurrentTransaction('worker', 'messaging', 1_700_000_000_000_000.0);
+
+        $this->assertSame($transaction, ElasticApm::getCurrentTransaction());
+        $this->assertSame('worker', $this->endTransaction()['name']);
+        $this->assertEqualsWithDelta(1_700_000_000_000_000, $this->sink->transactions[1]['timestamp'], 1);
     }
 
-    public function testCaptureCurrentSpan(): void
+    public function testBeginTransactionContinuesADistributedTrace(): void
     {
-        $this->interactor->beginCurrentTransaction('test', 'request');
+        $parent = new DistributedTracingData();
+        $parent->traceId = '0af7651916cd43dd8448eb211c80319c';
+        $parent->parentId = 'b7ad6b7169203331';
+        $parent->isSampled = true;
+
+        $transaction = $this->interactor->beginTransaction('child', 'request', null, $parent);
+        $current = $this->interactor->beginCurrentTransaction('current-child', 'request', null, $parent);
+
+        $this->assertSame($parent->traceId, $transaction->getTraceId());
+        $this->assertSame($parent->parentId, $transaction->getParentId());
+        $this->assertSame($parent->traceId, $current->getTraceId());
+        $this->assertSame($parent->parentId, $current->getParentId());
+
+        $current->end();
+        $transaction->end();
+    }
+
+    public function testBeginAndEndCurrentSpan(): void
+    {
+        $span = $this->interactor->beginCurrentSpan('SELECT', 'db', 'mysql', 'query');
+
+        $this->assertSame($span, ElasticApm::getCurrentTransaction()->getCurrentSpan());
+        $this->assertTrue($this->interactor->endCurrentSpan());
+
+        $this->endTransaction();
+        $this->assertCount(1, $this->sink->spans);
+        $this->assertSame('SELECT', $this->sink->spans[0]['name']);
+        $this->assertSame('db', $this->sink->spans[0]['type']);
+        $this->assertSame('mysql', $this->sink->spans[0]['subtype']);
+        $this->assertSame('query', $this->sink->spans[0]['action']);
+    }
+
+    public function testEndCurrentSpanWithExplicitDuration(): void
+    {
+        $this->interactor->beginCurrentSpan('span', 'custom');
+        $this->interactor->endCurrentSpan(0.5);
+
+        $this->endTransaction();
+        $this->assertEqualsWithDelta(0.5, $this->sink->spans[0]['duration'], 0.001);
+    }
+
+    public function testCaptureCurrentSpanReturnsTheCallbackResultAndRecordsTheSpan(): void
+    {
         $result = $this->interactor->captureCurrentSpan(
-            'test-span',
+            'capture',
             'db',
-            fn(): string => 'test-result',
-        );
-        $this->assertSame('test-result', $result);
-    }
-
-    public function testCaptureCurrentSpanWithAllParameters(): void
-    {
-        $this->interactor->beginCurrentTransaction('test', 'request');
-        $result = $this->interactor->captureCurrentSpan(
-            'test-span',
-            'db',
-            fn(): int => 42,
+            static fn(): int => 42,
             'mysql',
             'query',
-            microtime(true),
         );
+
         $this->assertSame(42, $result);
+
+        $this->endTransaction();
+        $this->assertSame('capture', $this->sink->spans[0]['name']);
+        $this->assertSame('mysql', $this->sink->spans[0]['subtype']);
     }
 
-    public function testSetUserAttributes(): void
+    public function testSetUserAttributesAddsOnlyNonNullValues(): void
     {
-        $result = $this->interactor->setUserAttributes('user-123', 'user@example.com', 'testuser');
-        $this->assertTrue($result);
+        $this->assertTrue($this->interactor->setUserAttributes('user-123', null, 'testuser'));
+
+        $this->assertSame(['user_id' => 'user-123', 'user_username' => 'testuser'], $this->labels());
     }
 
-    public function testSetUserAttributesWithOnlyId(): void
+    public function testSetUserAttributesWithAllValues(): void
     {
-        $result = $this->interactor->setUserAttributes('user-123', null, null);
-        $this->assertTrue($result);
+        $this->interactor->setUserAttributes('user-123', 'user@example.com', 'testuser');
+
+        $this->assertSame(
+            ['user_id' => 'user-123', 'user_email' => 'user@example.com', 'user_username' => 'testuser'],
+            $this->labels(),
+        );
     }
 
-    public function testSetUserAttributesWithOnlyEmail(): void
+    public function testSetUserAttributesWithAllNullAddsNothing(): void
     {
-        $result = $this->interactor->setUserAttributes(null, 'user@example.com', null);
-        $this->assertTrue($result);
+        $this->assertTrue($this->interactor->setUserAttributes(null, null, null));
+
+        $this->assertSame([], $this->labels());
     }
 
-    public function testSetUserAttributesWithOnlyUsername(): void
-    {
-        $result = $this->interactor->setUserAttributes(null, null, 'testuser');
-        $this->assertTrue($result);
-    }
-
-    public function testSetUserAttributesWithAllNull(): void
-    {
-        $result = $this->interactor->setUserAttributes(null, null, null);
-        $this->assertTrue($result);
-    }
-
-    public function testAddContextFromConfig(): void
+    public function testAddContextFromConfigAddsMemoryUsageLabelsAndContext(): void
     {
         $this->interactor->addContextFromConfig();
 
-        // If no exception is thrown, the test passes
-        $this->addToAssertionCount(1);
-    }
-
-    public function testAddContextFromConfigWithMemoryUsage(): void
-    {
-        $config = new Config(
-            customLabels: ['label1' => 'value1'],
-            customContext: ['context1' => 'ctx1'],
-            shouldCollectMemoryUsage: true,
-            memoryUsageLabelName: 'memory_usage',
-            shouldExplicitlyCollectCommandExceptions: false,
-            shouldUnwrapExceptions: false,
-        );
-        $interactor = new ElasticApmInteractor($config);
-
-        $interactor->addContextFromConfig();
-
-        // If no exception is thrown, the test passes
-        $this->addToAssertionCount(1);
+        $labels = $this->labels();
+        $this->assertIsInt($labels['memory_peak'] ?? null);
+        $this->assertGreaterThan(0, $labels['memory_peak']);
+        $this->assertSame('value', $labels['custom_label'] ?? null);
+        $this->assertSame('ctx_value', $labels['custom_context'] ?? null);
     }
 
     public function testAddContextFromConfigWithoutMemoryUsage(): void
     {
-        $config = new Config(
-            customLabels: ['label1' => 'value1'],
-            customContext: ['context1' => 'ctx1'],
-            shouldCollectMemoryUsage: false,
-            memoryUsageLabelName: 'memory',
-            shouldExplicitlyCollectCommandExceptions: false,
-            shouldUnwrapExceptions: false,
-        );
-        $interactor = new ElasticApmInteractor($config);
+        $interactor = new ElasticApmInteractor($this->config(collectMemoryUsage: false));
 
         $interactor->addContextFromConfig();
 
-        // If no exception is thrown, the test passes
-        $this->addToAssertionCount(1);
+        $this->assertSame(['custom_label' => 'value', 'custom_context' => 'ctx_value'], $this->labels());
+    }
+
+    public function testAddContextFromConfigSeesLabelsAddedToTheConfigAtRuntime(): void
+    {
+        $config = $this->config(collectMemoryUsage: false);
+        $interactor = new ElasticApmInteractor($config);
+
+        $config->addCustomLabels('tenant', 'acme');
+        $interactor->addContextFromConfig();
+
+        $this->assertSame('acme', $this->labels()['tenant'] ?? null);
+    }
+
+    private function config(bool $collectMemoryUsage = true, bool $unwrapExceptions = true): Config
+    {
+        return new Config(
+            customLabels: ['custom_label' => 'value'],
+            customContext: ['custom_context' => 'ctx_value'],
+            shouldCollectMemoryUsage: $collectMemoryUsage,
+            memoryUsageLabelName: 'memory_peak',
+            shouldExplicitlyCollectCommandExceptions: false,
+            shouldUnwrapExceptions: $unwrapExceptions,
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function endTransaction(): array
+    {
+        ElasticApm::getCurrentTransaction()->end();
+
+        $transactions = $this->sink->transactions;
+        $last = \end($transactions);
+        $this->assertIsArray($last, 'No transaction was recorded');
+
+        return $last;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function labels(): array
+    {
+        /** @var array<string, mixed> */
+        return $this->endTransaction()['context']['tags'] ?? [];
     }
 }

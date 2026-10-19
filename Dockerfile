@@ -44,9 +44,13 @@ RUN composer install --no-interaction --no-scripts --no-progress
 # Copy the rest of the application
 COPY . .
 
-# Set environment variables for testing
+# Set environment variables for testing.
+# The agent must be enabled for its PHP part (the Elastic\Apm\ElasticApm API) to load, otherwise every test that
+# drives the real agent is skipped. DISABLE_SEND keeps it from ever contacting an APM server. Run with
+# `-e ELASTIC_APM_ENABLED=false` to exercise the "extension installed but agent disabled" fallback path instead.
 ENV APP_ENV=test
-ENV ELASTIC_APM_ENABLED=false
+ENV ELASTIC_APM_ENABLED=true
+ENV ELASTIC_APM_DISABLE_SEND=true
 ENV ELASTIC_APM_LOG_LEVEL_STDERR=off
 
 # Default command to run tests

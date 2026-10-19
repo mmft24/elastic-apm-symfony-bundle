@@ -4,15 +4,18 @@ declare(strict_types=1);
 
 namespace ElasticApmBundle\Tests\Listener;
 
+use Elastic\Apm\TransactionInterface;
 use ElasticApmBundle\Interactor\Config;
 use ElasticApmBundle\Interactor\ElasticApmInteractorInterface;
 use ElasticApmBundle\Listener\CommandListener;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\ConsoleEvents;
 use Symfony\Component\Console\Event\ConsoleCommandEvent;
 use Symfony\Component\Console\Event\ConsoleErrorEvent;
+use Symfony\Component\Console\Event\ConsoleTerminateEvent;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputOption;
@@ -32,6 +35,7 @@ final class CommandListenerTest extends TestCase
         $this->assertArrayHasKey(ConsoleEvents::ERROR, $events);
         $this->assertSame(['onConsoleCommand', 0], $events[ConsoleEvents::COMMAND]);
         $this->assertSame(['onConsoleError', 0], $events[ConsoleEvents::ERROR]);
+        $this->assertSame(['onConsoleTerminate', -1024], $events[ConsoleEvents::TERMINATE]);
     }
 
     public function testOnConsoleCommandSetsTransactionName(): void
@@ -381,6 +385,67 @@ final class CommandListenerTest extends TestCase
         ;
 
         $listener->onConsoleError($event);
+    }
+
+    /**
+     * @return iterable<string, array{int, string, string}>
+     */
+    public static function exitCodes(): iterable
+    {
+        yield 'success' => [0, 'CLI 0', 'success'];
+        yield 'generic failure' => [1, 'CLI 1', 'failure'];
+        yield 'invalid usage' => [2, 'CLI 2', 'failure'];
+        yield 'max exit code' => [255, 'CLI 255', 'failure'];
+    }
+
+    #[DataProvider('exitCodes')]
+    public function testOnConsoleTerminateSetsResultAndOutcomeFromTheExitCode(
+        int $exitCode,
+        string $expectedResult,
+        string $expectedOutcome,
+    ): void {
+        if (!\interface_exists(TransactionInterface::class)) {
+            $this->markTestSkipped('Elastic\Apm\TransactionInterface needs the agent (ELASTIC_APM_ENABLED not false)');
+        }
+
+        $listener = $this->createListener();
+        $transaction = $this->createMock(TransactionInterface::class);
+        $transaction->expects($this->once())->method('setResult')->with($expectedResult);
+        $transaction->expects($this->once())->method('setOutcome')->with($expectedOutcome);
+        $this->interactor->expects($this->once())->method('getCurrentTransaction')->willReturn($transaction);
+
+        $listener->onConsoleTerminate($this->createTerminateEvent($exitCode));
+    }
+
+    public function testOnConsoleTerminateUsesTheExitCodeChangedByEarlierListeners(): void
+    {
+        if (!\interface_exists(TransactionInterface::class)) {
+            $this->markTestSkipped('Elastic\Apm\TransactionInterface needs the agent (ELASTIC_APM_ENABLED not false)');
+        }
+
+        $listener = $this->createListener();
+        $transaction = $this->createMock(TransactionInterface::class);
+        $transaction->expects($this->once())->method('setResult')->with('CLI 0');
+        $transaction->expects($this->once())->method('setOutcome')->with('success');
+        $this->interactor->expects($this->once())->method('getCurrentTransaction')->willReturn($transaction);
+
+        $event = $this->createTerminateEvent(1);
+        $event->setExitCode(0);
+
+        $listener->onConsoleTerminate($event);
+    }
+
+    public function testOnConsoleTerminateWithoutCurrentTransactionDoesNothing(): void
+    {
+        $listener = $this->createListener();
+        $this->interactor->expects($this->once())->method('getCurrentTransaction')->willReturn(null);
+
+        $listener->onConsoleTerminate($this->createTerminateEvent(1));
+    }
+
+    private function createTerminateEvent(int $exitCode): ConsoleTerminateEvent
+    {
+        return new ConsoleTerminateEvent(new Command('test:command'), new ArrayInput([]), new NullOutput(), $exitCode);
     }
 
     /**

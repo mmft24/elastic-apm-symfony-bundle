@@ -8,6 +8,8 @@ use ElasticApmBundle\Interactor\ElasticApmInteractorInterface;
 use ElasticApmBundle\Listener\ExceptionListener;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpFoundation\Exception\BadRequestException;
+use Symfony\Component\HttpFoundation\Exception\SuspiciousOperationException;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -210,6 +212,38 @@ final class ExceptionListenerTest extends TestCase
 
         $listener->onKernelException($event1);
         $listener->onKernelException($event2);
+    }
+
+    public function testRequestExceptionsAreTreatedAsBadRequestAndIgnoredByDefault(): void
+    {
+        // Regression: Symfony answers RequestExceptionInterface with a 400, but the listener used to report it
+        // as a server error because it only applied the threshold to HttpExceptionInterface.
+        $listener = $this->createListener();
+
+        $this->interactor->expects($this->never())->method('noticeThrowable');
+
+        $listener->onKernelException($this->createEvent(new SuspiciousOperationException('Untrusted Host')));
+        $listener->onKernelException($this->createEvent(new BadRequestException('Malformed')));
+    }
+
+    public function testRequestExceptionsAreCapturedWhenThresholdIncludes400(): void
+    {
+        $listener = $this->createListener(captureMinStatusCode: 400);
+        $exception = new SuspiciousOperationException('Untrusted Host');
+
+        $this->interactor->expects($this->once())->method('noticeThrowable')->with($exception);
+
+        $listener->onKernelException($this->createEvent($exception));
+    }
+
+    private function createEvent(\Throwable $exception): ExceptionEvent
+    {
+        return new ExceptionEvent(
+            $this->createStub(HttpKernelInterface::class),
+            new Request(),
+            HttpKernelInterface::MAIN_REQUEST,
+            $exception,
+        );
     }
 
     /**

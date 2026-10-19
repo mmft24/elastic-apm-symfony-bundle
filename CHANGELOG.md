@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Support for Symfony 8 on PHP 8.3+ (`symfony/*` constraints widened to `^6.4|^7.0|^8.0`).
 - Configurable HTTP capture threshold for `ExceptionListener`.
+- `report_silenced_errors` option (default `false`) and an overridable
+  `AbstractErrorHandlerListener::shouldReport()` filtering hook for the warning and deprecation listeners.
 - Console transactions get a result (`CLI <exit code>`) and outcome (`success` for exit code 0, otherwise
   `failure`) on `console.terminate` when `commands` is enabled.
 - Kernel integration tests (HTTP and console) and real-agent tests; CI now runs against the real agent, the
@@ -38,12 +40,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   semantics.
 - Error-handler deduplication cache is now scoped per transaction.
 - Hardened command parameter redaction and stopped double-reporting exception causes.
+- Warnings and deprecations silenced with `@` or excluded by `error_reporting()` are no longer reported to APM;
+  set `report_silenced_errors: true` to restore the previous behaviour.
 - `ExceptionListener` treats request exceptions (`RequestExceptionInterface`, e.g. `SuspiciousOperationException`,
   `BadRequestException`) as HTTP 400, like Symfony does, so they are no longer reported as server errors unless
   `capture_min_status_code` is 400 or lower.
 
 ### Fixed
 
+- The warning and deprecation listeners were private services, so `ElasticApmBundle::boot()` could not find them
+  in a compiled container and never registered their error handlers.
+- The error handler now returns the previous handler's result unchanged instead of casting it to `bool`, so a
+  previous handler returning `null` no longer makes PHP log the error a second time. It also accepts calls without
+  `$file`/`$line`.
 - `interactor: auto` no longer selects `ElasticApmInteractor` when the extension is loaded but the agent is
   disabled (`ELASTIC_APM_ENABLED=false`), which fataled with `Class "Elastic\Apm\ElasticApm" not found`.
 - The `controller` transaction naming strategy names `[Controller::class, 'action']` controllers instead of

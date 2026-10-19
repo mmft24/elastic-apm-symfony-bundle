@@ -16,6 +16,11 @@ namespace ElasticApmBundle\Listener;
 
 use ElasticApmBundle\Exception\WarningException;
 
+/**
+ * Left open so applications can subclass it, e.g. overriding shouldReport() to drop known-noisy messages.
+ *
+ * @api
+ */
 class WarningListener extends AbstractErrorHandlerListener
 {
     #[\Override]

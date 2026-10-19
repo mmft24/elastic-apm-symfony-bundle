@@ -289,4 +289,72 @@ final class ElasticApmExtensionTest extends AbstractExtensionTestCase
 
         $this->assertContainerBuilderNotHasService(WarningListener::class);
     }
+
+    public function testErrorHandlerListenersAreLookedUpByPublicClassIdAndAlias(): void
+    {
+        $this->load();
+
+        // ElasticApmBundle::boot() fetches the listeners by class id from the compiled container.
+        foreach ([WarningListener::class, DeprecationListener::class] as $id) {
+            $this->assertTrue($this->container->getDefinition($id)->isPublic(), $id.' must be public');
+        }
+        $this->assertTrue($this->container->getAlias('elastic_apm.listener.warning')->isPublic());
+        $this->assertTrue($this->container->getAlias('elastic_apm.listener.deprecation')->isPublic());
+    }
+
+    public function testErrorHandlerListenersAreResettable(): void
+    {
+        $this->load();
+
+        $this->assertContainerBuilderHasServiceDefinitionWithTag(
+            WarningListener::class,
+            'kernel.reset',
+            ['method' => 'reset']
+        );
+        $this->assertContainerBuilderHasServiceDefinitionWithTag(
+            DeprecationListener::class,
+            'kernel.reset',
+            ['method' => 'reset']
+        );
+    }
+
+    public function testSilencedErrorsAreNotReportedByDefault(): void
+    {
+        $this->load();
+
+        $this->assertContainerBuilderHasServiceDefinitionWithMethodCall(
+            WarningListener::class,
+            'setReportSilencedErrors',
+            [false]
+        );
+        $this->assertContainerBuilderHasServiceDefinitionWithMethodCall(
+            DeprecationListener::class,
+            'setReportSilencedErrors',
+            [false]
+        );
+    }
+
+    public function testReportSilencedErrorsIsWiredIntoBothListeners(): void
+    {
+        $this->load(['report_silenced_errors' => true]);
+
+        $this->assertContainerBuilderHasServiceDefinitionWithMethodCall(
+            WarningListener::class,
+            'setReportSilencedErrors',
+            [true]
+        );
+        $this->assertContainerBuilderHasServiceDefinitionWithMethodCall(
+            DeprecationListener::class,
+            'setReportSilencedErrors',
+            [true]
+        );
+    }
+
+    public function testReportSilencedErrorsDoesNotLoadDisabledListeners(): void
+    {
+        $this->load(['report_silenced_errors' => true, 'warnings' => false, 'deprecations' => false]);
+
+        $this->assertContainerBuilderNotHasService(WarningListener::class);
+        $this->assertContainerBuilderNotHasService(DeprecationListener::class);
+    }
 }

@@ -239,4 +239,29 @@ final class ConfigurationTest extends TestCase
 
         $this->assertFalse($config['commands']['explicitly_collect_exceptions']);
     }
+
+    public function testReportSilencedErrorsDefaultsToFalse(): void
+    {
+        $config = $this->processor->processConfiguration($this->configuration, []);
+
+        $this->assertFalse($config['report_silenced_errors']);
+    }
+
+    public function testReportSilencedErrorsCanBeEnabled(): void
+    {
+        $config = $this->processor->processConfiguration($this->configuration, [
+            ['report_silenced_errors' => true],
+        ]);
+
+        $this->assertTrue($config['report_silenced_errors']);
+    }
+
+    public function testReportSilencedErrorsRejectsNonBoolean(): void
+    {
+        $this->expectException(InvalidConfigurationException::class);
+
+        $this->processor->processConfiguration($this->configuration, [
+            ['report_silenced_errors' => 'yes'],
+        ]);
+    }
 }

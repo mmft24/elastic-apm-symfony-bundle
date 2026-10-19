@@ -16,6 +16,11 @@ namespace ElasticApmBundle\Listener;
 
 use ElasticApmBundle\Exception\DeprecationException;
 
+/**
+ * Left open so applications can subclass it, e.g. overriding shouldReport() to drop known-noisy messages.
+ *
+ * @api
+ */
 class DeprecationListener extends AbstractErrorHandlerListener
 {
     #[\Override]

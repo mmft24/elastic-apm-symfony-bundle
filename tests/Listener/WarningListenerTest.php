@@ -38,6 +38,73 @@ final class WarningListenerTest extends ErrorHandlerListenerTestCase
         $this->assertCount(1, $this->baseCalls);
     }
 
+    public function testAtSilencedErrorIsNotReportedButStillChained(): void
+    {
+        $this->listener->register();
+
+        $this->interactor->expects($this->never())->method('addContextFromConfig');
+        $this->interactor->expects($this->never())->method('noticeThrowable');
+
+        @\trigger_error('silenced', $this->reportedLevel());
+
+        // The previous handler decides for itself what to do with silenced errors.
+        $this->assertSame([[$this->reportedLevel(), 'silenced']], $this->baseCallsWithoutLocation());
+    }
+
+    public function testErrorExcludedByErrorReportingIsNotReported(): void
+    {
+        $this->listener->register();
+
+        $this->interactor->expects($this->never())->method('noticeThrowable');
+
+        \error_reporting(0);
+        \trigger_error('excluded by zero', $this->reportedLevel());
+        \error_reporting(\E_ALL & ~$this->reportedLevel());
+        \trigger_error('excluded by mask', $this->reportedLevel());
+
+        $this->assertCount(2, $this->baseCalls);
+    }
+
+    public function testSilencedErrorsCanBeDisabledAgain(): void
+    {
+        $this->listener->setReportSilencedErrors(true);
+        $this->listener->setReportSilencedErrors(false);
+        $this->listener->register();
+
+        $this->interactor->expects($this->never())->method('noticeThrowable');
+
+        @\trigger_error('silenced', $this->reportedLevel());
+    }
+
+    public function testSilencedErrorDoesNotPoisonDedupCache(): void
+    {
+        $this->listener->register();
+
+        $this->interactor->expects($this->once())->method('noticeThrowable');
+
+        // The silenced occurrence must not be remembered, otherwise the loud one on the same line would be dropped.
+        for ($i = 0; $i < 2; ++$i) {
+            0 === $i ? @\trigger_error('same site', $this->reportedLevel()) : \trigger_error(
+                'same site',
+                $this->reportedLevel(),
+            );
+        }
+    }
+
+    public function testSubclassFilteringKeepsTheParentSilencingCheck(): void
+    {
+        $listener = $this->createFilteringListener($this->interactor);
+        $listener->register();
+
+        try {
+            $this->interactor->expects($this->never())->method('noticeThrowable');
+
+            @\trigger_error('kept', \E_USER_WARNING);
+        } finally {
+            $listener->unregister();
+        }
+    }
+
     #[\Override]
     protected function createListener(ElasticApmInteractorInterface $interactor): AbstractErrorHandlerListener
     {

@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Support for Symfony 8 on PHP 8.3+ (`symfony/*` constraints widened to `^6.4|^7.0|^8.0`).
 - Configurable HTTP capture threshold for `ExceptionListener`.
+- `report_silenced_errors` option (default `false`) and an overridable
+  `AbstractErrorHandlerListener::shouldReport()` filtering hook for the warning and deprecation listeners.
 
 ### Changed
 
@@ -31,6 +33,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   semantics.
 - Error-handler deduplication cache is now scoped per transaction.
 - Hardened command parameter redaction and stopped double-reporting exception causes.
+- Warnings and deprecations silenced with `@` or excluded by `error_reporting()` are no longer reported to APM;
+  set `report_silenced_errors: true` to restore the previous behaviour.
+
+### Fixed
+
+- The warning and deprecation listeners were private services, so `ElasticApmBundle::boot()` could not find them
+  in a compiled container and never registered their error handlers.
+- The error handler now returns the previous handler's result unchanged instead of casting it to `bool`, so a
+  previous handler returning `null` no longer makes PHP log the error a second time. It also accepts calls without
+  `$file`/`$line`.
 
 ## [2.0.0]
 

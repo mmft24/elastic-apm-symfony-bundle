@@ -13,26 +13,21 @@ use Symfony\Component\Config\Definition\Processor;
 #[CoversClass(Configuration::class)]
 final class MessengerConfigurationTest extends TestCase
 {
-    public function testEnabledByDefaultWhenMessengerIsInstalled(): void
+    // Stamped messages cannot be decoded by consumers without the stamp class, so tracing must be opted into.
+    public function testDisabledByDefault(): void
     {
         $config = $this->process(new Configuration(), []);
 
         $this->assertSame(
-            ['enabled' => true, 'transaction_type' => 'message', 'ignored_retryable_exceptions' => []],
+            ['enabled' => false, 'transaction_type' => 'message', 'ignored_retryable_exceptions' => []],
             $config['messenger'],
         );
     }
 
-    public function testDetectsMessengerByDefault(): void
+    public function testCanBeEnabled(): void
     {
-        $this->assertTrue($this->process(new Configuration(), [])['messenger']['enabled']);
-    }
-
-    public function testDisabledByDefaultWhenMessengerIsMissing(): void
-    {
-        $config = $this->process(new Configuration(messengerAvailable: false), []);
-
-        $this->assertFalse($config['messenger']['enabled']);
+        $this->assertTrue($this->process(new Configuration(), ['messenger' => true])['messenger']['enabled']);
+        $this->assertTrue($this->process(new Configuration(), ['messenger' => null])['messenger']['enabled']);
     }
 
     public function testCanBeDisabled(): void
@@ -42,7 +37,8 @@ final class MessengerConfigurationTest extends TestCase
         $this->assertFalse($config['messenger']['enabled']);
     }
 
-    public function testCanBeConfigured(): void
+    // canBeEnabled() semantics: configuring any option enables the feature.
+    public function testConfiguringAnOptionEnablesIt(): void
     {
         $config = $this->process(new Configuration(), [
             'messenger' => [

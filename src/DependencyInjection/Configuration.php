@@ -18,17 +18,9 @@ use Symfony\Component\Config\Definition\Builder\ArrayNodeDefinition;
 use Symfony\Component\Config\Definition\Builder\TreeBuilder;
 use Symfony\Component\Config\Definition\ConfigurationInterface;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\Messenger\MessageBusInterface;
 
-final readonly class Configuration implements ConfigurationInterface
+final class Configuration implements ConfigurationInterface
 {
-    /**
-     * @param bool|null $messengerAvailable whether symfony/messenger is installed; null detects it
-     */
-    public function __construct(
-        private ?bool $messengerAvailable = null,
-    ) {}
-
     #[\Override]
     public function getConfigTreeBuilder(): TreeBuilder
     {
@@ -179,26 +171,24 @@ final readonly class Configuration implements ConfigurationInterface
 
     private function addMessengerSection(ArrayNodeDefinition $rootNode): void
     {
-        $messenger = $rootNode->children()->arrayNode('messenger');
-        $messenger->info('Distributed tracing across Symfony Messenger and one transaction per consumed message.');
-
-        if ($this->messengerAvailable ?? \interface_exists(MessageBusInterface::class)) {
-            $messenger->canBeDisabled();
-        } else {
-            $messenger->canBeEnabled();
-        }
-
-        $messenger
+        // Opt-in: stamped messages carry the bundle's stamp class, which consumers without it cannot decode.
+        $rootNode
             ->children()
-                ->scalarNode('transaction_type')
-                    ->defaultValue('message')
-                    ->cannotBeEmpty()
-                ->end()
-                ->arrayNode('ignored_retryable_exceptions')
-                    ->info(
-                        'Exception classes/interfaces not reported to APM when the failed message will be retried.',
-                    )
-                    ->scalarPrototype()->end()
+                ->arrayNode('messenger')
+                    ->info('Distributed tracing across Symfony Messenger and one transaction per consumed message.')
+                    ->canBeEnabled()
+                    ->children()
+                        ->scalarNode('transaction_type')
+                            ->defaultValue('message')
+                            ->cannotBeEmpty()
+                        ->end()
+                        ->arrayNode('ignored_retryable_exceptions')
+                            ->info(
+                                'Exception classes/interfaces not reported to APM when the failed message will be retried.',
+                            )
+                            ->scalarPrototype()->end()
+                        ->end()
+                    ->end()
                 ->end()
             ->end()
         ;

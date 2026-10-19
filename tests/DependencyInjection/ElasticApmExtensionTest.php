@@ -8,6 +8,7 @@ use ElasticApmBundle\DependencyInjection\ElasticApmExtension;
 use ElasticApmBundle\Interactor\AdaptiveInteractor;
 use ElasticApmBundle\Interactor\BlackholeInteractor;
 use ElasticApmBundle\Interactor\Config;
+use ElasticApmBundle\Interactor\ElasticApmInteractor;
 use ElasticApmBundle\Interactor\ElasticApmInteractorInterface;
 use ElasticApmBundle\Interactor\LoggingInteractorDecorator;
 use ElasticApmBundle\Listener\CommandListener;
@@ -93,6 +94,27 @@ final class ElasticApmExtensionTest extends AbstractExtensionTestCase
             ElasticApmInteractorInterface::class,
             AdaptiveInteractor::class,
         );
+    }
+
+    public function testAutoInteractorPicksTheRealInteractorOnlyWhenTheAgentApiIsAvailable(): void
+    {
+        $this->load(['interactor' => 'auto']);
+
+        // Regression: "auto" used to check extension_loaded() only, so an installed-but-disabled agent
+        // (ELASTIC_APM_ENABLED=false) got ElasticApmInteractor and fataled on the missing Elastic\Apm\ElasticApm.
+        $agentUsable = \extension_loaded('elastic_apm') && \class_exists(\Elastic\Apm\ElasticApm::class);
+
+        $this->assertContainerBuilderHasAlias(
+            ElasticApmInteractorInterface::class,
+            $agentUsable ? ElasticApmInteractor::class : BlackholeInteractor::class,
+        );
+    }
+
+    public function testCustomInteractorServiceIdIsUsed(): void
+    {
+        $this->load(['interactor' => 'app.my_interactor']);
+
+        $this->assertContainerBuilderHasAlias(ElasticApmInteractorInterface::class, 'app.my_interactor');
     }
 
     public function testLoggingDecoratorIsNotWiredByDefault(): void

@@ -21,6 +21,7 @@ Console commands are automatically named after the command name.
 When running console commands, the bundle automatically:
 - Sets the transaction name to the command name
 - Records CLI options and arguments as custom parameters for easier debugging
+- Sets the transaction result to `CLI <exit code>` and the outcome to `success` (exit code 0) or `failure`
 
 ### 3. Exception Tracking
 
@@ -137,7 +138,7 @@ elastic_apm:
     exceptions:
         enabled: true
         unwrap_exceptions: false  # Also report nested exceptions
-        capture_min_status_code: 500  # Min HTTP status for an HttpException to be reported (lower to 400 for 4xx signal)
+        capture_min_status_code: 500  # Min HTTP status for an HttpException to be reported (lower to 400 for 4xx signal); request exceptions count as 400
         ignored_exceptions:
             - Symfony\Component\HttpKernel\Exception\NotFoundHttpException
 
@@ -226,7 +227,7 @@ The `elastic_apm.interactor` configuration accepts a service ID implementing `El
 | `ElasticApmBundle\Interactor\AdaptiveInteractor` (default) | Checks once per request if the APM extension is loaded |
 | `ElasticApmBundle\Interactor\ElasticApmInteractor` | Direct communication with the APM agent |
 | `ElasticApmBundle\Interactor\BlackholeInteractor` | Silently ignores all APM calls |
-| `auto` | Checks extension availability at container build time |
+| `auto` | Checks at container build time that the extension is loaded and the agent enabled |
 
 **Note**: When `enabled: false`, the `BlackholeInteractor` is always used regardless of configuration.
 

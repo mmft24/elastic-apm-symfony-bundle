@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Support for Symfony 8 on PHP 8.3+ (`symfony/*` constraints widened to `^6.4|^7.0|^8.0`).
 - Configurable HTTP capture threshold for `ExceptionListener`.
+- Console transactions get a result (`CLI <exit code>`) and outcome (`success` for exit code 0, otherwise
+  `failure`) on `console.terminate` when `commands` is enabled.
+- Kernel integration tests (HTTP and console) and real-agent tests; CI now runs against the real agent, the
+  lowest dependencies (Symfony 6.4) and with the agent disabled.
 
 ### Changed
 
@@ -31,6 +35,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   semantics.
 - Error-handler deduplication cache is now scoped per transaction.
 - Hardened command parameter redaction and stopped double-reporting exception causes.
+- `ExceptionListener` treats request exceptions (`RequestExceptionInterface`, e.g. `SuspiciousOperationException`,
+  `BadRequestException`) as HTTP 400, like Symfony does, so they are no longer reported as server errors unless
+  `capture_min_status_code` is 400 or lower.
+
+### Fixed
+
+- `interactor: auto` no longer selects `ElasticApmInteractor` when the extension is loaded but the agent is
+  disabled (`ELASTIC_APM_ENABLED=false`), which fataled with `Class "Elastic\Apm\ElasticApm" not found`.
+- The `controller` transaction naming strategy names `[Controller::class, 'action']` controllers instead of
+  reporting them as `Unknown Symfony controller`.
 
 ## [2.0.0]
 

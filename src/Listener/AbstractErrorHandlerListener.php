@@ -25,6 +25,9 @@ use Symfony\Contracts\Service\ResetInterface;
  * class deduplicates events so a hot code path that emits the same error over and over does not flood APM with
  * identical entries.
  *
+ * Errors silenced with the `@` operator or excluded by error_reporting() are not reported by default: PHP still
+ * invokes user error handlers for them, so without this check every `@`-guarded call would end up in APM.
+ *
  * The dedup cache is scoped to a single transaction: it implements {@see ResetInterface} so that Symfony's
  * services resetter clears it between HTTP requests (including worker runtimes such as RoadRunner or FrankenPHP)
  * and between Messenger messages. Without this, the error handler is registered once per process and the cache
@@ -38,6 +41,8 @@ abstract class AbstractErrorHandlerListener implements ResetInterface
      */
     private const int MAX_DEDUP_ENTRIES = 1000;
     private bool $isRegistered = false;
+    private bool $reportSilencedErrors = false;
+    private ?\Closure $previousHandler = null;
 
     /**
      * @var array<string, true>
@@ -48,6 +53,14 @@ abstract class AbstractErrorHandlerListener implements ResetInterface
         protected readonly ElasticApmInteractorInterface $interactor,
     ) {}
 
+    /**
+     * Also report errors silenced with `@` or excluded by error_reporting().
+     */
+    public function setReportSilencedErrors(bool $reportSilencedErrors): void
+    {
+        $this->reportSilencedErrors = $reportSilencedErrors;
+    }
+
     public function register(): void
     {
         if ($this->isRegistered) {
@@ -55,17 +68,8 @@ abstract class AbstractErrorHandlerListener implements ResetInterface
         }
         $this->isRegistered = true;
 
-        /** @psalm-suppress UndefinedVariable $prevErrorHandler */
-        $prevErrorHandler = \set_error_handler(function (int $type, string $msg, string $file, int $line) use (
-            &$prevErrorHandler
-        ): bool {
-            if ($this->handles($type) && !$this->isDuplicate($type, $msg, $file, $line)) {
-                $this->interactor->addContextFromConfig();
-                $this->interactor->noticeThrowable($this->createThrowable($type, $msg, $file, $line));
-            }
-
-            return $prevErrorHandler ? (bool) $prevErrorHandler($type, $msg, $file, $line) : false;
-        });
+        $previousHandler = \set_error_handler($this->handleError(...));
+        $this->previousHandler = null === $previousHandler ? null : \Closure::fromCallable($previousHandler);
     }
 
     public function unregister(): void
@@ -74,7 +78,26 @@ abstract class AbstractErrorHandlerListener implements ResetInterface
             return;
         }
         $this->isRegistered = false;
+        $this->previousHandler = null;
         \restore_error_handler();
+    }
+
+    /**
+     * Error handler installed by {@see register()}.
+     *
+     * The previous handler's return value is passed through untouched: PHP runs its built-in handler (which logs
+     * the error and populates error_get_last()) only when a user handler returns exactly `false`, so collapsing
+     * e.g. `null` to a bool would change behaviour for the rest of the chain. Without a previous handler `false`
+     * is returned so PHP's built-in handling still happens.
+     */
+    public function handleError(int $type, string $message, string $file = '', int $line = 0): mixed
+    {
+        if ($this->shouldReport($type, $message, $file, $line) && !$this->isDuplicate($type, $message, $file, $line)) {
+            $this->interactor->addContextFromConfig();
+            $this->interactor->noticeThrowable($this->createThrowable($type, $message, $file, $line));
+        }
+
+        return null === $this->previousHandler ? false : ($this->previousHandler)($type, $message, $file, $line);
     }
 
     /**
@@ -85,6 +108,24 @@ abstract class AbstractErrorHandlerListener implements ResetInterface
     public function reset(): void
     {
         $this->seen = [];
+    }
+
+    /**
+     * Extension point for subclasses that need extra filtering (e.g. ignoring messages or paths); call the parent
+     * to keep the level and silencing checks.
+     */
+    protected function shouldReport(int $type, string $message, string $file, int $line): bool
+    {
+        return $this->handles($type) && ($this->reportSilencedErrors || !self::isSilenced($type));
+    }
+
+    /**
+     * Whether the error was silenced with `@` or excluded by the current error_reporting() level. Since PHP 8 the
+     * `@` operator lowers error_reporting() to fatal levels only rather than to 0.
+     */
+    protected static function isSilenced(int $type): bool
+    {
+        return 0 === (\error_reporting() & $type);
     }
 
     /**

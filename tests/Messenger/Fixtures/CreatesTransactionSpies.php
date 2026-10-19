@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ElasticApmBundle\Tests\Messenger\Fixtures;
 
+use Elastic\Apm\SpanInterface;
 use Elastic\Apm\TransactionInterface;
 
 require_once __DIR__.'/elastic_apm_api.inc';
@@ -22,8 +23,10 @@ trait CreatesTransactionSpies
     private function createTransactionSpy(
         array $headers = ['traceparent' => self::PRODUCER_TRACEPARENT],
         bool $noop = false,
+        ?SpanInterface $currentSpan = null,
     ): TransactionSpy {
         $transaction = $this->createStub(TransactionInterface::class);
+        $transaction->method('getCurrentSpan')->willReturn($currentSpan ?? $this->createSpan([], noop: true));
         $spy = new TransactionSpy($transaction);
 
         $transaction->method('setResult')->willReturnCallback(static function (?string $result) use ($spy): void {
@@ -50,5 +53,24 @@ trait CreatesTransactionSpies
         );
 
         return $spy;
+    }
+
+    /**
+     * @param array<string, string> $headers what injectDistributedTracingHeaders() hands to the injector
+     */
+    private function createSpan(array $headers, bool $noop = false, bool $ended = false): SpanInterface
+    {
+        $span = $this->createStub(SpanInterface::class);
+        $span->method('isNoop')->willReturn($noop);
+        $span->method('hasEnded')->willReturn($ended);
+        $span->method('injectDistributedTracingHeaders')->willReturnCallback(
+            static function (\Closure $injector) use ($headers): void {
+                foreach ($headers as $name => $value) {
+                    $injector($name, $value);
+                }
+            },
+        );
+
+        return $span;
     }
 }

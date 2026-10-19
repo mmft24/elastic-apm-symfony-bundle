@@ -20,7 +20,8 @@ use Symfony\Component\Messenger\Stamp\ConsumedByWorkerStamp;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 
 /**
- * Adds an {@see ApmTracingStamp} carrying the current transaction's distributed tracing headers to outgoing envelopes.
+ * Adds an {@see ApmTracingStamp} carrying the active span's (or transaction's) distributed tracing headers to
+ * outgoing envelopes.
  */
 final readonly class TracingStamper
 {
@@ -42,18 +43,23 @@ final readonly class TracingStamper
 
         $transaction = $this->interactor->getCurrentTransaction();
 
-        if (null === $transaction) {
+        // An ended transaction can still be the agent's current one (e.g. the discarded worker process transaction).
+        if (null === $transaction || $transaction->isNoop() || $transaction->hasEnded()) {
             return $envelope;
         }
 
+        // The consumer's transaction must be a child of whatever is active when the message is sent.
+        $span = $transaction->getCurrentSpan();
+        $segment = $span->isNoop() || $span->hasEnded() ? $transaction : $span;
+
         $headers = [];
-        $transaction->injectDistributedTracingHeaders(
+        $segment->injectDistributedTracingHeaders(
             static function (string $name, string $value) use (&$headers): void {
                 $headers[$name] = $value;
             },
         );
 
-        // A noop transaction (agent disabled or not recording) injects nothing.
+        // Nothing to propagate, e.g. the transaction is not sampled by a disabled agent.
         if ([] === $headers) {
             return $envelope;
         }

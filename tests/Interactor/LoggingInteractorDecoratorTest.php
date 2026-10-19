@@ -160,6 +160,26 @@ final class LoggingInteractorDecoratorTest extends TestCase
         $this->assertNull($result);
     }
 
+    public function testBeginCurrentTransactionFromHeadersLogsHeaderNamesAndDelegates(): void
+    {
+        $this->createDecorator();
+        $headers = ['traceparent' => '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', 'tracestate' => 'es=s:1'];
+
+        $this->logger->expects($this->once())
+            ->method('debug')
+            ->with(
+                'Starting a new Elastic APM transaction from distributed tracing headers and setting to current for app {name}',
+                ['name' => 'consumer', 'headers' => ['traceparent', 'tracestate']],
+            );
+
+        $this->interactor->expects($this->once())
+            ->method('beginCurrentTransactionFromHeaders')
+            ->with('consumer', 'message', $headers, 1.5)
+            ->willReturn(null);
+
+        $this->assertNull($this->decorator->beginCurrentTransactionFromHeaders('consumer', 'message', $headers, 1.5));
+    }
+
     public function testEndCurrentTransactionLogsAndDelegates(): void
     {
         $this->createDecorator();

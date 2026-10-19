@@ -23,6 +23,7 @@ use Symfony\Component\Messenger\Event\WorkerMessageHandledEvent;
 use Symfony\Component\Messenger\Event\WorkerMessageReceivedEvent;
 use Symfony\Component\Messenger\Event\WorkerMessageSkipEvent;
 use Symfony\Component\Messenger\Event\WorkerRunningEvent;
+use Symfony\Component\Messenger\Event\WorkerStartedEvent;
 use Symfony\Component\Messenger\Event\WorkerStoppedEvent;
 use Symfony\Component\Messenger\Exception\WrappedExceptionsInterface;
 
@@ -54,6 +55,7 @@ final class WorkerTransactionListener implements EventSubscriberInterface
     public static function getSubscribedEvents(): array
     {
         return [
+            WorkerStartedEvent::class => ['onWorkerStarted', self::PRIORITY],
             WorkerMessageReceivedEvent::class => ['onMessageReceived', self::PRIORITY],
             WorkerMessageHandledEvent::class => ['onMessageHandled', self::PRIORITY],
             WorkerMessageFailedEvent::class => ['onMessageFailed', self::PRIORITY],
@@ -61,6 +63,12 @@ final class WorkerTransactionListener implements EventSubscriberInterface
             WorkerRunningEvent::class => ['onWorkerRunning', self::PRIORITY],
             WorkerStoppedEvent::class => ['onWorkerStopped', self::PRIORITY],
         ];
+    }
+
+    // An idle worker would otherwise keep the process transaction open until the first message arrives.
+    public function onWorkerStarted(WorkerStartedEvent $event): void
+    {
+        $this->discardProcessTransaction();
     }
 
     public function onMessageReceived(WorkerMessageReceivedEvent $event): void
@@ -77,13 +85,19 @@ final class WorkerTransactionListener implements EventSubscriberInterface
         $message = $envelope->getMessage();
         $stamp = $envelope->last(ApmTracingStamp::class);
 
-        $this->transaction = $this->interactor->beginCurrentTransaction(
+        $transaction = $this->interactor->beginCurrentTransactionFromHeaders(
             \sprintf('messenger:consume %s %s', $event->getReceiverName(), $message::class),
             $this->transactionType,
-            null,
-            TraceParentParser::parse($stamp?->getHeader('traceparent')),
+            $stamp?->getHeaders() ?? [],
         );
-        $this->message = null === $this->transaction ? null : $message;
+
+        // A noop transaction (agent not recording) never becomes current, so there is nothing to track or end.
+        if (null === $transaction || $transaction->isNoop()) {
+            return;
+        }
+
+        $this->transaction = $transaction;
+        $this->message = $message;
     }
 
     public function onMessageHandled(WorkerMessageHandledEvent $event): void
@@ -153,10 +167,14 @@ final class WorkerTransactionListener implements EventSubscriberInterface
     {
         $transaction = $this->interactor->getCurrentTransaction();
 
-        if (null !== $transaction && !$transaction->isNoop() && !$transaction->hasEnded()) {
-            // discard() also ends the transaction, which clears it as the agent's current transaction.
-            $transaction->discard();
+        if (null === $transaction || $transaction->isNoop() || $transaction->hasEnded()) {
+            return;
         }
+
+        // Agent 1.15: discard() marks the transaction ended without sending it, but it stays the agent's current
+        // transaction (only a regular end() resets it), so the agent logs a warning when the first message's
+        // transaction begins as current. The stale transaction is ended, so TracingStamper never propagates it.
+        $transaction->discard();
     }
 
     private function endOpenTransaction(): void

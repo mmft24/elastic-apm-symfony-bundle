@@ -102,6 +102,21 @@ final readonly class LoggingInteractorDecorator implements ElasticApmInteractorI
     }
 
     #[\Override]
+    public function beginCurrentTransactionFromHeaders(
+        string $name,
+        string $type,
+        array $headers,
+        ?float $timestamp = null,
+    ): ?TransactionInterface {
+        $this->logger->debug(
+            'Starting a new Elastic APM transaction from distributed tracing headers and setting to current for app {name}',
+            ['name' => $name, 'headers' => \array_keys($headers)],
+        );
+
+        return $this->interactor->beginCurrentTransactionFromHeaders($name, $type, $headers, $timestamp);
+    }
+
+    #[\Override]
     public function getCurrentTransaction(): ?TransactionInterface
     {
         $this->logger->debug('Getting active transaction');

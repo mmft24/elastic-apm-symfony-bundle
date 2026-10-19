@@ -37,6 +37,11 @@ final class AdaptiveInteractorTest extends TestCase
         yield 'noticeThrowable' => ['noticeThrowable', [new \RuntimeException('Test')], null];
         yield 'beginTransaction' => ['beginTransaction', ['name', 'type', 1.5, null], null];
         yield 'beginCurrentTransaction' => ['beginCurrentTransaction', ['name', 'type', 1.5, null], null];
+        yield 'beginCurrentTransactionFromHeaders' => [
+            'beginCurrentTransactionFromHeaders',
+            ['name', 'type', ['traceparent' => 'value'], 1.5],
+            null,
+        ];
         yield 'endCurrentTransaction' => ['endCurrentTransaction', [2.0], true];
         yield 'getCurrentTransaction' => ['getCurrentTransaction', [], null];
         yield 'beginCurrentSpan' => ['beginCurrentSpan', ['span', 'type', 'sub', 'act', 1.5], null];

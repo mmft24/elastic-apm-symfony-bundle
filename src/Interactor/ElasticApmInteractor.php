@@ -122,6 +122,40 @@ final readonly class ElasticApmInteractor implements ElasticApmInteractorInterfa
             ->begin();
     }
 
+    #[\Override]
+    public function beginCurrentTransactionFromHeaders(
+        string $name,
+        string $type,
+        array $headers,
+        ?float $timestamp = null,
+    ): TransactionInterface {
+        $extractor = static function (string $headerName) use ($headers): ?string {
+            foreach ($headers as $candidate => $value) {
+                if (0 === \strcasecmp($candidate, $headerName)) {
+                    return $value;
+                }
+            }
+
+            return null;
+        };
+
+        if (\version_compare(ElasticApm::VERSION, '1.3.0', '<')) {
+            return ElasticApm::beginCurrentTransaction($name, $type, $timestamp, $extractor('traceparent'));
+        }
+
+        $builder = ElasticApm::newTransaction($name, $type);
+
+        if (null !== $timestamp) {
+            $builder->timestamp($timestamp);
+        }
+
+        // The agent asks for "traceparent" and "tracestate"; the latter carries the sampling rate of the trace.
+        return $builder
+            ->distributedTracingHeaderExtractor($extractor)
+            ->asCurrent()
+            ->begin();
+    }
+
     private function createTransactionBuilder(
         string $name,
         string $type,

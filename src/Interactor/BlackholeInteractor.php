@@ -67,6 +67,16 @@ final class BlackholeInteractor implements ElasticApmInteractorInterface
     }
 
     #[\Override]
+    public function beginCurrentTransactionFromHeaders(
+        string $name,
+        string $type,
+        array $headers,
+        ?float $timestamp = null,
+    ): ?TransactionInterface {
+        return null;
+    }
+
+    #[\Override]
     public function endCurrentTransaction(?float $duration = null): bool
     {
         return true;

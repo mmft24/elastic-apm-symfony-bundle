@@ -106,6 +106,18 @@ final class RecordingInteractor implements ElasticApmInteractorInterface
     }
 
     #[\Override]
+    public function beginCurrentTransactionFromHeaders(
+        string $name,
+        string $type,
+        array $headers,
+        ?float $timestamp = null,
+    ): ?TransactionInterface {
+        $this->record(__FUNCTION__, $name, $type, $headers, $timestamp);
+
+        return null;
+    }
+
+    #[\Override]
     public function endCurrentTransaction(?float $duration = null): bool
     {
         return $this->record(__FUNCTION__, $duration);

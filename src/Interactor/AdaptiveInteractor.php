@@ -82,6 +82,16 @@ final readonly class AdaptiveInteractor implements ElasticApmInteractorInterface
     }
 
     #[\Override]
+    public function beginCurrentTransactionFromHeaders(
+        string $name,
+        string $type,
+        array $headers,
+        ?float $timestamp = null,
+    ): ?TransactionInterface {
+        return $this->interactor->beginCurrentTransactionFromHeaders($name, $type, $headers, $timestamp);
+    }
+
+    #[\Override]
     public function endCurrentTransaction(?float $duration = null): bool
     {
         return $this->interactor->endCurrentTransaction($duration);

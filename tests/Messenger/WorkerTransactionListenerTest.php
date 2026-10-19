@@ -18,6 +18,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Event\AbstractWorkerMessageEvent;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
 use Symfony\Component\Messenger\Event\WorkerMessageHandledEvent;
 use Symfony\Component\Messenger\Event\WorkerMessageReceivedEvent;
@@ -334,15 +335,17 @@ final class WorkerTransactionListenerTest extends TestCase
 
     public function testSkipEndsTransactionLeftOpen(): void
     {
-        if (!\class_exists(WorkerMessageSkipEvent::class)) {
-            $this->markTestSkipped('WorkerMessageSkipEvent was added in symfony/messenger 7.2.');
-        }
-
         $listener = $this->createListener();
         $envelope = $this->envelope();
 
+        // WorkerMessageSkipEvent was added in symfony/messenger 7.2; on older versions exercise the handler with
+        // the base event it accepts, so the test still runs (CI fails on skipped tests).
+        $skipEvent = \class_exists(WorkerMessageSkipEvent::class)
+            ? new WorkerMessageSkipEvent($envelope, 'async')
+            : new class($envelope, 'async') extends AbstractWorkerMessageEvent {};
+
         $listener->onMessageReceived(new WorkerMessageReceivedEvent($envelope, 'async'));
-        $listener->onMessageSkipped(new WorkerMessageSkipEvent($envelope, 'async'));
+        $listener->onMessageSkipped($skipEvent);
 
         $this->assertSame(1, $this->messageTransactions[0]->endCalls);
         $this->assertNull($this->interactor->current);

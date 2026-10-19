@@ -331,7 +331,7 @@ final class ElasticApmBundleTest extends TestCase
             'commands' => false,
             'exceptions' => false,
         ] + $config);
-        $container->compile();
+        $container->compile(true);
         $container->set('test.interactor', $interactor);
 
         foreach ([WarningListener::class, DeprecationListener::class] as $id) {

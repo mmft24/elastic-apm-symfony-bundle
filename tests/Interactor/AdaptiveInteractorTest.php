@@ -25,7 +25,7 @@ final class AdaptiveInteractorTest extends TestCase
     }
 
     /**
-     * @return iterable<string, array{string, list<mixed>, mixed}>
+     * @return iterable<string, array{non-empty-string, list<mixed>, mixed}>
      */
     public static function delegatedCalls(): iterable
     {
@@ -47,7 +47,8 @@ final class AdaptiveInteractorTest extends TestCase
     }
 
     /**
-     * @param list<mixed> $arguments
+     * @param non-empty-string $method
+     * @param list<mixed>      $arguments
      */
     #[DataProvider('delegatedCalls')]
     public function testDelegatesToTheInteractorSelectedForThisEnvironment(
@@ -55,10 +56,8 @@ final class AdaptiveInteractorTest extends TestCase
         array $arguments,
         mixed $return,
     ): void {
-        $real = $this->createMock(ElasticApmInteractorInterface::class);
-        $fake = $this->createMock(ElasticApmInteractorInterface::class);
-
-        [$selected, $other] = self::agentIsUsable() ? [$real, $fake] : [$fake, $real];
+        $selected = $this->createMock(ElasticApmInteractorInterface::class);
+        $other = $this->createMock(ElasticApmInteractorInterface::class);
 
         $expectation = $selected->expects($this->once())
             ->method($method)
@@ -69,6 +68,8 @@ final class AdaptiveInteractorTest extends TestCase
         }
 
         $other->expects($this->never())->method($this->anything());
+
+        [$real, $fake] = self::agentIsUsable() ? [$selected, $other] : [$other, $selected];
 
         $result = (new AdaptiveInteractor($real, $fake))->{$method}(...$arguments);
 

@@ -125,7 +125,7 @@ final class ElasticApmInteractorTest extends TestCase
     public function testGetCurrentTransactionReturnsTheAgentTransaction(): void
     {
         $this->assertSame(ElasticApm::getCurrentTransaction(), $this->interactor->getCurrentTransaction());
-        $this->assertSame('initial', $this->interactor->getCurrentTransaction()->getName());
+        $this->assertFalse($this->interactor->getCurrentTransaction()->isNoop());
     }
 
     public function testEndCurrentTransaction(): void
@@ -146,13 +146,15 @@ final class ElasticApmInteractorTest extends TestCase
 
     public function testBeginTransactionDoesNotReplaceTheCurrentOne(): void
     {
+        $current = ElasticApm::getCurrentTransaction();
         $transaction = $this->interactor->beginTransaction('background', 'job');
 
-        $this->assertSame('background', $transaction->getName());
-        $this->assertSame('job', $transaction->getType());
-        $this->assertSame('initial', ElasticApm::getCurrentTransaction()->getName());
+        $this->assertSame($current, ElasticApm::getCurrentTransaction());
 
         $transaction->end();
+        $this->assertSame('background', $this->sink->transactions[0]['name']);
+        $this->assertSame('job', $this->sink->transactions[0]['type']);
+        $this->assertSame('initial', $this->endTransaction()['name']);
     }
 
     public function testBeginCurrentTransactionBecomesCurrent(): void
@@ -300,7 +302,11 @@ final class ElasticApmInteractorTest extends TestCase
     {
         ElasticApm::getCurrentTransaction()->end();
 
-        return $this->sink->transactions[\array_key_last($this->sink->transactions)];
+        $transactions = $this->sink->transactions;
+        $last = \end($transactions);
+        $this->assertIsArray($last, 'No transaction was recorded');
+
+        return $last;
     }
 
     /**

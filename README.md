@@ -9,17 +9,43 @@ This bundle integrates the Elastic APM PHP API into Symfony. For more informatio
 
 1. **Better transaction naming strategy**: Your transaction traces can be named accurately by route names, the controller name, the request URI or you can decide on a custom naming strategy via a seamless interface that uses any naming convention you deem fit. While running console commands, it also sets the transaction name as the command name.
 
-2. **Console Commands Enhancements**: While running console commands, its sets the options and arguments passed via the CLI as custom parameters to the transaction trace for easier debugging.
+2. **Console Commands Enhancements**: While running console commands, it sets the options and arguments passed via the CLI as custom parameters to the transaction trace for easier debugging (sensitive values are redacted), and sets the transaction result (`CLI <exit code>`) and outcome.
 
 3. **Exception Listening**: It also captures all Symfony exceptions in web requests and console commands and sends them to Elastic APM.
 
-4. **Interactor Service**: It provides access to most of the Elastic APM API via a Service class `ElasticApmInteractorInterface::class`. This can be injected it into any class, controller, service to communicate with APM. If the `adaptive` interactive is used then any APM calls will be ignored when the extension isn't loaded (for example in development environments).
+4. **Interactor Service**: It provides access to most of the Elastic APM API via a Service class `ElasticApmInteractorInterface::class`. This can be injected into any class, controller or service to communicate with APM. If the default `AdaptiveInteractor` is used then any APM calls will be ignored when the extension isn't loaded (for example in development environments).
 
     ```php
     $this->apm->addLabel('name', 'john');
     ```
 
 5. **Logging Support**: In development, you are unlikely to have Elastic APM setup. There's a configuration to enable logging which outputs all actions to your Symfony log, hence emulating what it would actually do in production.
+
+6. **Warnings and deprecations**: PHP warnings and deprecations are reported to APM, deduplicated per request.
+
+7. **Symfony Messenger tracing** (opt-in): traces flow from the producer to the worker, and each consumed message becomes its own transaction.
+
+8. **Log ↔ trace correlation** (opt-in): Monolog records carry `trace.id`, `transaction.id` and `span.id` so Kibana can link logs and traces.
+
+## Requirements
+
+- PHP 8.3+
+- Symfony 6.4, 7.x or 8.x
+- The [`elastic_apm` PHP extension](https://www.elastic.co/guide/en/apm/agent/php/current/intro.html) to actually send data (without it the bundle falls back to a no-op interactor)
+- Optional: `symfony/messenger` for Messenger tracing, `monolog/monolog` ^3 for log correlation
+
+## Upgrading from 2.x
+
+3.0 contains a few breaking and behaviour changes; see the [CHANGELOG](CHANGELOG.md) for the full list. In short:
+
+- `ElasticApmInteractorInterface` has a new method, `beginCurrentTransactionFromHeaders()`. Custom interactors must
+  implement it.
+- `ConfigurationException` now extends `\InvalidArgumentException` instead of `\ErrorException`.
+- The warning and deprecation listeners now actually report (they never registered their error handlers in 2.0.0).
+  Set `warnings: false` / `deprecations: false` to keep them out of APM.
+- With `transaction_naming: controller`, `[Controller::class, 'action']` controllers are named
+  `Callback controller: App\Controller::action()` instead of `Unknown Symfony controller`.
+- `interactor: auto` now resolves to `AdaptiveInteractor` and detects the agent at runtime.
 
 
 ## Installation
@@ -90,6 +116,7 @@ elastic_apm:
     commands: 
         enabled: true                     # If true, enhances CLI commands with options and arguments (default: true)
         explicitly_collect_exceptions: true # Turn this off if you are experiencing multiple reports of exceptions.
+        sensitive_parameter_names: []     # Extra option/argument names whose values are redacted (see note below)
     messenger:
         enabled: false                    # Opt-in; requires symfony/messenger. Read the rollout notes below first
         transaction_type: message         # Type of the transaction started for each consumed message
@@ -99,7 +126,8 @@ elastic_apm:
 ```
 
 > **Note:** sensitive command options/arguments (those whose name contains `password`, `token`, `secret`,
-> `api_key`, `dsn`, …) are automatically redacted before being sent to APM.
+> `api_key`, `dsn`, …) are automatically redacted before being sent to APM. Add your own names (matched as whole
+> words, case-insensitive) with `commands.sensitive_parameter_names`.
 
 When `commands` is enabled, the bundle also sets the result and outcome of the current transaction when a command
 terminates, like the agent does for HTTP requests: the result is `CLI <exit code>` (e.g. `CLI 0`, `CLI 1`) and the
@@ -133,7 +161,7 @@ $container->getDefinition(\ElasticApmBundle\Listener\WarningListener::class)
 
 ## Enhanced RUM instrumentation
 
-This bundle does not integrate RUM (see https://www.elastic.co/guide/en/apm/server/current/overview.html) as there are a multiple of ways to install and configure the instrumentation.
+This bundle does not integrate RUM (see https://www.elastic.co/guide/en/apm/server/current/overview.html) as there are multiple ways to install and configure the instrumentation.
 
 ## Transaction naming strategies
 
@@ -148,12 +176,12 @@ The transaction naming service class must implement the `ElasticApmBundle\Transa
 
 ## Interactor services
 
-The config key`elastic_apm.interactor` will accept a service ID to a service implementing `ElasticApmInteractorInterface`. 
+The config key `elastic_apm.interactor` will accept a service ID to a service implementing `ElasticApmInteractorInterface`. 
 This bundle comes with a few services that may be suitable for you. 
 
 | Configuration value | Description |
 | ------------------- | ----------- |
-| `ElasticApmBundle\Interactor\AdaptiveInteractor` | This is the default interactor. It will check once per request if the agent extension is installed or not. | 
+| `ElasticApmBundle\Interactor\AdaptiveInteractor` | This is the default interactor. It checks once, when the container instantiates it, whether the agent extension is loaded, and delegates to the real or the blackhole interactor accordingly. | 
 | `ElasticApmBundle\Interactor\ElasticApmInteractor` | This interactor communicates with the Elastic APM agent. It is the one decorator that actually does some work. | 
 | `ElasticApmBundle\Interactor\BlackholeInteractor` | This interactor silently drops any calls. | 
 | `auto` | Same as `AdaptiveInteractor`: the agent is detected at runtime (extension loaded **and** agent enabled), not when the container is built, so a container warmed up with `ELASTIC_APM_ENABLED=false` (e.g. during a Docker build) still reports once the agent is enabled. | 
@@ -284,7 +312,7 @@ Notes:
 
 PHP APM will automatically collect unhandled exceptions. The bundle will also install a listener for command exceptions. Our listener and the default behaviour can conflict which causes this behaviour. 
 
-To fix this you can turn off `explicitly_collect_exceptions` under the `command` configuration node.
+To fix this you can turn off `explicitly_collect_exceptions` under the `commands` configuration node.
 
 
 ## Development
@@ -354,7 +382,7 @@ This project uses GitHub Actions for continuous integration. The workflow automa
 - **Runs the lowest supported dependencies** (`composer update --prefer-lowest`, Symfony 6.4) on PHP 8.3
 - **Runs with the agent disabled** (`ELASTIC_APM_ENABLED=false`) to cover the fallback interactors
 - **Generates code coverage** reports (PHP 8.3 only)
-- **Checks code style** (if php-cs-fixer is configured)
+- **Runs static analysis and code style checks**: ECS, PHPStan, Psalm and Rector (dry-run)
 - **Executes on**:
   - Every push to `master`/`main` branches
   - Every pull request targeting `master`/`main`
@@ -371,14 +399,14 @@ We welcome contributions! Here's how you can help:
 2. Clone your fork: `git clone https://github.com/YOUR-USERNAME/elastic-apm-symfony-bundle.git`
 3. Create a feature branch: `git checkout -b feature/your-feature-name`
 4. Make your changes
-5. Run tests to ensure everything works: `docker build -t elastic-apm-test . && docker run --rm elastic-apm-test`
+5. Run tests to ensure everything works (see [Running Unit Tests](#running-unit-tests))
 6. Commit your changes with a clear message
 7. Push to your fork: `git push origin feature/your-feature-name`
 8. Open a Pull Request
 
 ### Contribution Guidelines
 
-- **Code Style**: Follow PSR-12 coding standards
+- **Code Style**: Follow the project's ECS configuration (`vendor/bin/ecs check`)
 - **Tests**: Add tests for new features or bug fixes
 - **Documentation**: Update documentation for any changed functionality
 - **Compatibility**: Ensure compatibility with Symfony 6.4, 7.0, and 8.0 (as declared in `composer.json`) and PHP 8.3+

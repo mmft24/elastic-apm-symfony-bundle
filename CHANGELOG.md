@@ -7,10 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-19
+
 ### Added
 
 - Support for Symfony 8 on PHP 8.3+ (`symfony/*` constraints widened to `^6.4|^7.0|^8.0`).
-- Configurable HTTP capture threshold for `ExceptionListener`.
+- `exceptions.capture_min_status_code` option (default `500`): the minimum HTTP status an `HttpException` must
+  carry for `ExceptionListener` to report it. Lower it to `400` to capture 4xx signal.
+- `commands.sensitive_parameter_names` option: extra command option/argument names whose values are redacted
+  before being sent to APM, on top of the built-in list (`password`, `token`, `secret`, `api_key`, `dsn`, …).
 - Opt-in Symfony Messenger distributed tracing (`elastic_apm.messenger`, disabled by default): outgoing messages
   carry the active span's trace headers (`traceparent` and `tracestate`) in an `ApmTracingStamp`, and each message
   consumed by a worker becomes its own transaction in that trace, keeping the producer's sample rate, with
@@ -89,5 +94,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Baseline release. See the Git history for prior changes.
 
-[Unreleased]: https://github.com/mmft24/elastic-apm-symfony-bundle/compare/2.0.0...HEAD
+[Unreleased]: https://github.com/mmft24/elastic-apm-symfony-bundle/compare/3.0.0...HEAD
+[3.0.0]: https://github.com/mmft24/elastic-apm-symfony-bundle/compare/2.0.0...3.0.0
 [2.0.0]: https://github.com/mmft24/elastic-apm-symfony-bundle/releases/tag/2.0.0

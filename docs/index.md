@@ -20,14 +20,16 @@ Console commands are automatically named after the command name.
 
 When running console commands, the bundle automatically:
 - Sets the transaction name to the command name
-- Records CLI options and arguments as custom parameters for easier debugging
+- Records CLI options and arguments as custom parameters for easier debugging (sensitive values such as passwords,
+  tokens and DSNs are redacted)
 - Sets the transaction result to `CLI <exit code>` and the outcome to `success` (exit code 0) or `failure`
 
 ### 3. Exception Tracking
 
 Automatically captures and reports:
-- All Symfony exceptions in web requests
+- Symfony exceptions in web requests (HTTP exceptions only from `capture_min_status_code`, 500 by default)
 - Console command exceptions
+- PHP warnings and deprecations, deduplicated per request / message
 - Configurable exception filtering and unwrapping
 
 ### 4. Interactor Service
@@ -46,7 +48,7 @@ class MyService
     public function myMethod(): void
     {
         $this->apm->addLabel('user', 'john');
-        $this->apm->addCustomContext(['key' => 'value']);
+        $this->apm->addCustomContext('key', 'value');
     }
 }
 ```
@@ -57,6 +59,23 @@ The `AdaptiveInteractor` (default) gracefully handles environments where the APM
 
 Enable logging mode to output all APM interactions to your Symfony log when the APM extension isn't available in development.
 
+### 6. Symfony Messenger Tracing (opt-in)
+
+Outgoing messages carry the producer's trace context, and every message consumed by a worker becomes its own
+transaction in that trace. See [Symfony Messenger](#symfony-messenger).
+
+### 7. Log ↔ Trace Correlation (opt-in)
+
+A Monolog 3 processor adds `trace.id`, `transaction.id` and `span.id` to every record so Kibana can link logs and
+traces. See [Log ↔ Trace Correlation](#log--trace-correlation).
+
+## Requirements
+
+- PHP 8.3+
+- Symfony 6.4, 7.x or 8.x
+- The `elastic_apm` PHP extension to send data (without it the bundle falls back to a no-op interactor)
+- Optional: `symfony/messenger` for Messenger tracing, `monolog/monolog` ^3 for log correlation
+
 ## Installation
 
 ### Prerequisites
@@ -66,7 +85,7 @@ Install the Elastic APM PHP extension following the [official guide](https://www
 ### Using Symfony Flex (Recommended)
 
 ```bash
-composer require myschoolmanagement/elastic-apm-symfony-bundle
+composer require mmft24/elastic-apm-symfony-bundle
 ```
 
 The bundle will be automatically registered thanks to Symfony Flex.
@@ -76,7 +95,7 @@ The bundle will be automatically registered thanks to Symfony Flex.
 1. Install the bundle:
 
 ```bash
-composer require myschoolmanagement/elastic-apm-symfony-bundle
+composer require mmft24/elastic-apm-symfony-bundle
 ```
 
 2. Register the bundle in `config/bundles.php`:
@@ -120,9 +139,9 @@ elastic_apm:
     deprecations:
         enabled: true
 
-    # Track warnings (default: false)
+    # Track warnings (default: true)
     warnings:
-        enabled: false
+        enabled: true
 
     # Also report warnings silenced with @ or excluded by error_reporting() (default: false).
     # Deprecations are always reported, like Symfony's ErrorHandler does.
@@ -157,6 +176,14 @@ elastic_apm:
         enabled: true
         # Disable if experiencing duplicate exception reports
         explicitly_collect_exceptions: true
+        # Extra option/argument names to redact, on top of the built-in list (password, token, secret, dsn, ...)
+        sensitive_parameter_names: []
+
+    # Symfony Messenger tracing (opt-in, requires symfony/messenger)
+    messenger:
+        enabled: false
+        transaction_type: message
+        ignored_retryable_exceptions: []  # Not reported while the message will still be retried
 
     # Add trace.id / transaction.id / span.id to Monolog records (requires monolog/monolog ^3)
     log_correlation:
@@ -179,7 +206,7 @@ elastic_apm:
     http:
         transaction_naming: route
 ```
-Transaction: `GET /api/users/{id}` → `api_user_show`
+Request `GET /api/users/123` matching route `api_user_show` → `api_user_show`
 
 #### Controller Naming
 ```yaml
@@ -187,7 +214,9 @@ elastic_apm:
     http:
         transaction_naming: controller
 ```
-Transaction: `App\Controller\UserController::show`
+Transaction: `App\Controller\UserController::show` for string controllers (e.g. attribute routes),
+`Callback controller: App\Controller\UserController::show()` for `[Controller::class, 'action']` controllers and
+`Closure controller` for closures.
 
 #### URI Naming
 ```yaml
@@ -195,7 +224,10 @@ elastic_apm:
     http:
         transaction_naming: uri
 ```
-Transaction: `/api/users/123` → `/api/users/{id}`
+Request `GET /api/users/123?page=2` → `GET /api/users/123`
+
+The query string is dropped so no sensitive data leaks into transaction names, but dynamic path segments still
+produce distinct names (high cardinality). Prefer `route` when that matters.
 
 ### Custom Strategy
 
@@ -238,7 +270,7 @@ The `elastic_apm.interactor` configuration accepts a service ID implementing `El
 
 | Service | Description |
 |---------|-------------|
-| `ElasticApmBundle\Interactor\AdaptiveInteractor` (default) | Checks once per request if the APM extension is loaded |
+| `ElasticApmBundle\Interactor\AdaptiveInteractor` (default) | Checks once, when the container instantiates it, whether the APM extension is loaded |
 | `ElasticApmBundle\Interactor\ElasticApmInteractor` | Direct communication with the APM agent |
 | `ElasticApmBundle\Interactor\BlackholeInteractor` | Silently ignores all APM calls |
 | `auto` | Alias of `AdaptiveInteractor`: detects the agent at runtime, so a container built with the agent disabled still reports once it is enabled |
@@ -260,24 +292,59 @@ class OrderService
 
     public function processOrder(Order $order): void
     {
-        $this->apm->startTransaction('order.process');
+        $this->apm->addLabel('order_id', $order->getId());
+        $this->apm->addCustomContext('items', count($order->getItems()));
+
+        $this->apm->beginCurrentSpan('order.process', 'app');
 
         try {
             // Process order
-            $this->apm->addLabel('order_id', $order->getId());
-            $this->apm->addCustomContext([
-                'total' => $order->getTotal(),
-                'items' => count($order->getItems()),
-            ]);
-
-            $this->apm->endTransaction();
-        } catch (\Exception $e) {
-            $this->apm->captureException($e);
+        } catch (\Throwable $e) {
+            $this->apm->noticeThrowable($e);
             throw $e;
+        } finally {
+            $this->apm->endCurrentSpan();
         }
     }
 }
 ```
+
+## Symfony Messenger
+
+Opt in (requires `symfony/messenger`):
+
+```yaml
+elastic_apm:
+    messenger: true
+```
+
+- **Producer:** every message sent to a transport gets an `ElasticApmBundle\Messenger\ApmTracingStamp` carrying the
+  W3C `traceparent`/`tracestate` headers of the active span (or transaction).
+- **Worker:** each consumed message becomes its own transaction, named
+  `messenger:consume <transport> <MessageClass>`, that continues the producer's trace. It ends with result
+  `MSG 2xx`/outcome `success` or `MSG 5xx`/outcome `failure`.
+- **Errors:** handler exceptions are reported unwrapped from `HandlerFailedException`. Exceptions listed in
+  `ignored_retryable_exceptions` are not reported while the message will still be retried.
+- Buses without an event dispatcher on their `SendMessageMiddleware` need the `elastic_apm.messenger.middleware`
+  middleware.
+
+**Rollout:** consumers without the stamp class reject stamped messages. Deploy the bundle to every consumer before
+any producer starts stamping, and do not roll back to a version without the stamp class while stamped messages are
+queued. See the README for details.
+
+## Log ↔ Trace Correlation
+
+Opt in (requires `monolog/monolog` ^3 and MonologBundle):
+
+```yaml
+elastic_apm:
+    log_correlation:
+        enabled: true
+```
+
+`ElasticApmBundle\Monolog\TraceContextProcessor` adds `trace.id` and `transaction.id` (and `span.id` when a span is
+active) to each record's `extra`. Records written outside a transaction are left untouched. Map these fields to
+the top-level ECS fields in your formatter or ingest pipeline, or rename them via `field_names`.
 
 ## Logging Integration
 
@@ -341,7 +408,7 @@ Check your Symfony logs (e.g., `var/log/dev.log`) for APM interactions.
 2. **Filter Exceptions**: Exclude expected exceptions (404s, validation errors) to reduce noise
 3. **Custom Labels**: Add consistent labels across your application for better filtering
 4. **Memory Tracking**: Enable in production to identify memory leaks
-5. **Adaptive Interactor**: Use in production to gracefully handle APM service outages
+5. **Adaptive Interactor**: Keep the default so environments without the APM extension simply report nothing
 
 ## Credits
 
@@ -349,6 +416,6 @@ This bundle is based on the work done by [ekino/EkinoNewRelicBundle](https://git
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/MySchoolManagement/elastic-apm-symfony-bundle/issues)
+- **Issues**: [GitHub Issues](https://github.com/mmft24/elastic-apm-symfony-bundle/issues)
 - **Elastic APM Documentation**: [https://www.elastic.co/apm](https://www.elastic.co/apm)
 - **PHP Agent Guide**: [https://www.elastic.co/guide/en/apm/agent/php/current/intro.html](https://www.elastic.co/guide/en/apm/agent/php/current/intro.html)
